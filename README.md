@@ -2,13 +2,8 @@
 
 A [Streamlit](https://streamlit.io/) app that turns spreadsheets exported
 from a data catalog into a validated **Apache Ossie** ("Open Semantic
-Interchange") semantic model YAML file.
-
-Upload table/column metadata, snapshot details, table relationships, and
-AI-context notes as CSV, XLSX, or TXT files straight from your browser --
-the app parses them, builds an Ossie-compliant semantic model, validates it
-against the official [`ossie-schema.json`](schema/ossie-schema.json), and
-lets you download the generated YAML.
+Interchange") semantic model YAML file -- in two stages, with a built-in
+YAML viewer/editor in between.
 
 Spec reference: [apache/ossie/core-spec](https://github.com/apache/ossie/tree/main/core-spec)
 (Ossie core metadata specification, version `0.2.0.dev0`).
@@ -22,12 +17,37 @@ streamlit run app.py
 
 The app starts on `http://localhost:47531` (configured in
 `.streamlit/config.toml`). Click **Load sample data** in the sidebar to try
-the app immediately with a bundled example data model -- no files required.
+Stage 1 immediately with a bundled example data model -- no files required.
+
+## The two-stage workflow
+
+### Stage 1 -- generate the base YAML
+
+Upload up to three files (only the first is required):
+
+1. **Table & column metadata** (required)
+2. **Metrics, field synonyms & custom extensions** (optional)
+3. **Relationships** (optional)
+
+Click **Generate base YAML**. The app parses the files, builds an
+Ossie-compliant semantic model, validates it against the official
+[`ossie-schema.json`](schema/ossie-schema.json), and shows it to you in an
+**editable text area** right in the browser -- make any manual tweaks you
+want, click **Apply edits**, and it re-validates and locks in your changes.
+You can download the YAML at this point, or continue to Stage 2.
+
+### Stage 2 -- enrich with AI context (optional, later)
+
+Once a base YAML exists, you can upload a separate **AI context** file
+(anytime -- immediately, or much later, in a different session). It never
+overwrites what's already there: it **concatenates** new instructions and
+appends new synonyms/examples onto whatever a table/field/model already
+has, and **appends** any `Custom Extension` value as a brand-new
+`custom_extensions` entry. This lets a business/domain reviewer layer on
+context without clobbering what the base generation (or a previous
+enrichment pass) already produced.
 
 ## What you upload
-
-The app expects up to four separate files. Only the first is required; the
-rest are optional and simply enrich the generated model.
 
 ### 1. Table & column metadata (required)
 
@@ -49,12 +69,28 @@ headers (case/spacing-insensitive) are used:
 | `Contains PII` | `Y`/`N` |
 | `Primary Key` | Name/label of the primary key constraint (supports composite keys: give every column in a composite key the same label) |
 
-### 2. Snapshot details (optional, app-defined format)
+### 2. Metrics, field synonyms & custom extensions (optional, app-defined format)
 
-One row per table, describing how/when it's captured:
-`Table Name`, `Snapshot Type` (Full/Incremental), `Snapshot Frequency`,
-`Snapshot Date Column`, `Partition Column`, `History Type` (e.g. SCD
-Type 1/2), `Retention Period`, `Source System`, `Load Pattern`.
+One sheet, one row per item, discriminated by a **`Type`** column:
+
+| Header | Used by | Meaning |
+|---|---|---|
+| `Type` | all | `Metric`, `Synonym`, or `Custom Extension` |
+| `Table Name` | Synonym, Custom Extension | Table the row applies to |
+| `Column Name` | Synonym, Custom Extension | Column the row applies to (leave blank on a Custom Extension row for a **table-level** extension) |
+| `Metric Name` | Metric | Unique metric identifier |
+| `Metric Expression` | Metric | Aggregate SQL expression, e.g. `SUM(FACT_POSITION.MARKET_VALUE)` |
+| `Metric Description` | Metric | What the metric measures |
+| `Metric Data Type` | Metric | `String`/`Integer`/`Decimal`/`Float`/`Boolean`/`Date`/`Time`/`DateTime`/`DateTimeTz`/`Opaque` |
+| `Synonyms` | Synonym | Comma-separated alternate names for that field |
+| `Custom Extension Vendor` | Custom Extension | Free-form vendor name (defaults to `COMMON`) |
+| `Custom Extension Data` | Custom Extension | A JSON object (used as-is) or free text (wrapped as `{"note": "..."}`) |
+
+Metrics become native Ossie `metrics[]` entries at the model level.
+Synonyms become the field's *base* `ai_context.synonyms`. Custom Extension
+rows are placeholders you can use for anything vendor-specific up front
+(masking policies, clustering keys, etc.) without waiting for the AI
+enrichment stage.
 
 ### 3. Relationships (optional, app-defined format)
 
@@ -63,12 +99,19 @@ One row per foreign-key relationship between two tables:
 `To Columns`, `Relationship Type` (e.g. Many-to-One), `Description`.
 `From Columns`/`To Columns` accept comma-separated lists for composite keys.
 
-### 4. AI context / instructions (optional, app-defined format)
+### 4. AI context enrichment (optional, uploaded later, app-defined format)
 
-One row per table or column, feeding Ossie's native `ai_context` blocks:
-`Table Name`, `Column Name` (leave blank for table-level context, or use the
-literal value `MODEL` in `Table Name` for model-level context), `Instructions`,
-`Synonyms`, `Examples`.
+One row per table or column: `Table Name`, `Column Name` (leave blank for
+table-level context, or use the literal value `MODEL` in `Table Name` for
+model-level context), `Instructions`, `Synonyms`, `Examples`,
+**`Custom Extension`**.
+
+Unlike File 2's synonyms (which seed the *base* YAML), everything in this
+file is **merged into an existing YAML**: `Instructions` are appended to
+any existing instructions (separated by a blank line), `Synonyms` and
+`Examples` are appended and de-duplicated, and `Custom Extension` becomes
+a new `custom_extensions` entry with `vendor_name: AI_ENRICHMENT` --
+nothing already in the YAML is overwritten or removed.
 
 Ready-to-use example files for all four formats are in [`sample_data/`](sample_data/)
 and can also be downloaded from the app's sidebar.
@@ -85,7 +128,8 @@ The bundled sample data represents a common wealth-management star schema:
 - **`DIM_DATE`** -- standard calendar date dimension.
 
 Relationships connect the fact to each dimension, and `DIM_ACCOUNT` to
-`DIM_CLIENT`. This is exactly what loads when you click **Load sample data**.
+`DIM_CLIENT`. This is exactly what loads when you click **Load sample data**
+(Stage 1) and **Use sample AI context file** (Stage 2).
 
 ## How fields map onto the Ossie spec
 
@@ -103,24 +147,26 @@ standard Ossie `custom_extensions` block instead of being dropped:
 | `size`, `Column Position`, `Is nullable`, `Contains PII`, `Description from source system` | `datasets[].fields[].custom_extensions` (`vendor_name: COMMON`) |
 | `Is Primary Key` + `Primary Key` label | `datasets[].primary_key` (grouped into a single composite key per table) |
 | `Assest Type`, PII column roll-up | `datasets[].custom_extensions` (`vendor_name: COMMON`) |
-| Snapshot file | `datasets[].custom_extensions` (`vendor_name: SNAPSHOT`) |
+| File 2 `Metric` rows | native `semantic_model[].metrics[]` |
+| File 2 `Synonym` rows | `datasets[].fields[].ai_context.synonyms` (base synonyms) |
+| File 2 `Custom Extension` rows | `datasets[].custom_extensions` (table-level) or `datasets[].fields[].custom_extensions` (field-level) |
 | Relationships file | native `semantic_model[].relationships[]` |
-| AI context file | native `ai_context` at model / dataset / field level |
+| File 4 AI context (Stage 2) | concatenated into `ai_context` + appended into `custom_extensions` (`vendor_name: AI_ENRICHMENT`) at model / dataset / field level |
 
 The generated YAML is validated against the official Ossie JSON Schema
 (`schema/ossie-schema.json`, fetched from the
 [`apache/ossie`](https://github.com/apache/ossie) `core-spec/` directory)
-before it's shown to you, and the app reports any validation errors inline.
+every time it changes, and the app reports any validation errors inline.
 
 ## Project layout
 
 ```
-app.py                          Streamlit UI
-ossie_builder.py                Parsing + YAML generation logic (framework-free, unit-tested)
+app.py                          Streamlit UI (two-stage workflow)
+ossie_builder.py                Parsing + YAML generation/merge logic (framework-free, unit-tested)
 schema/ossie-schema.json         Official Apache Ossie JSON Schema (bundled for validation)
 sample_data/                     Example input files (Account/Position data model)
 scripts/generate_sample_data.py  Regenerates the sample_data/ files
-tests/test_ossie_builder.py      Pytest suite, including full-pipeline schema validation
+tests/test_ossie_builder.py      Pytest suite: base generation + AI-context enrichment merge behavior
 .streamlit/config.toml           Dev server port/config
 ```
 
@@ -138,6 +184,7 @@ pytest
 - `Technical Data Type` mapping to the Ossie `datatype` enum is heuristic
   (regex-based on common SQL type names). Review the generated YAML for
   unusual/vendor-specific types, which fall back to `Opaque`.
-- The app currently focuses on `datasets`, `relationships`, and `ai_context`.
-  Ossie also supports model-level `metrics`; extending the metadata format
-  to author metrics would be a natural follow-up.
+- Re-running AI-context enrichment on the same file will append its
+  content again (it's a simple additive merge) -- avoid re-uploading the
+  same enrichment file twice unless you intend to duplicate its synonyms
+  and appended `custom_extensions`.

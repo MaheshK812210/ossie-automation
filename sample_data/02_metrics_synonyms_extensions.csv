@@ -1,0 +1,16 @@
+Type,Table Name,Column Name,Metric Name,Metric Expression,Metric Description,Metric Data Type,Synonyms,Custom Extension Vendor,Custom Extension Data
+Metric,,,total_market_value,SUM(FACT_POSITION.MARKET_VALUE),Total market value of all positions across accounts.,Decimal,,,
+Metric,,,total_cost_basis,SUM(FACT_POSITION.COST_BASIS),Total cost basis of all positions.,Decimal,,,
+Metric,,,total_unrealized_gain_loss,SUM(FACT_POSITION.UNREALIZED_GAIN_LOSS),Total unrealized gain or loss across all positions.,Decimal,,,
+Metric,,,distinct_securities_held,COUNT(DISTINCT FACT_POSITION.SECURITY_ID),Number of distinct securities held across all positions.,Integer,,,
+Metric,,,average_position_value,AVG(FACT_POSITION.MARKET_VALUE),Average market value per position.,Decimal,,,
+Synonym,FACT_POSITION,MARKET_VALUE,,,,,"position value, holding value, market val",,
+Synonym,FACT_POSITION,QUANTITY,,,,,"units held, shares held, position size",,
+Synonym,FACT_POSITION,UNREALIZED_GAIN_LOSS,,,,,"unrealized P&L, paper gain, paper loss",,
+Synonym,DIM_ACCOUNT,ACCOUNT_TYPE,,,,,"account category, wrapper type, plan type",,
+Synonym,DIM_ACCOUNT,ACCOUNT_NUMBER,,,,,"account number, acct no",,
+Synonym,DIM_CLIENT,CLIENT_NAME,,,,,"client name, customer name, household name",,
+Synonym,DIM_CLIENT,RISK_PROFILE,,,,,"risk tolerance, investor risk level",,
+Synonym,DIM_SECURITY,SECURITY_TYPE,,,,,"asset type, instrument type, product type",,
+Custom Extension,FACT_POSITION,,,,,,,SNOWFLAKE,"{""clustering_keys"": [""AS_OF_DATE_ID"", ""ACCOUNT_ID""]}"
+Custom Extension,DIM_ACCOUNT,ACCOUNT_NUMBER,,,,,,COMMON,"{""masking_policy"": ""MASK_ACCOUNT_NUMBER""}"

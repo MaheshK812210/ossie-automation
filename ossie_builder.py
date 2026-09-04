@@ -6,10 +6,26 @@ unit tested and reused from a CLI if needed. See ``app.py`` for the
 Streamlit UI that drives this module.
 
 Spec reference: https://github.com/apache/ossie/tree/main/core-spec
+
+Two-stage workflow
+-------------------
+1. **Base generation**: ``parse_metadata`` (table/column metadata, required)
+   + ``parse_metrics_synonyms_extensions`` (metrics, field synonyms, and
+   custom_extensions placeholders, optional) + ``parse_relationships``
+   (optional) are combined with ``build_semantic_model`` into a base Ossie
+   YAML document. The caller (``app.py``) lets the user view/edit that YAML
+   directly before moving on.
+2. **AI-context enrichment** (optional, later): ``parse_ai_context`` is
+   parsed from a separate file and merged into an *existing* model with
+   ``merge_ai_context_into_model``, which concatenates additional
+   instructions/synonyms/examples onto whatever is already there (never
+   overwrites) and appends any ``Custom Extension`` values as new
+   ``custom_extensions`` entries.
 """
 
 from __future__ import annotations
 
+import copy
 import csv
 import io
 import json
@@ -69,19 +85,6 @@ _METADATA_ALIASES = {
     "primary_key": "primary_key_name",
 }
 
-_SNAPSHOT_ALIASES = {
-    "table_name": "table_name",
-    "name": "table_name",
-    "snapshot_type": "snapshot_type",
-    "snapshot_frequency": "snapshot_frequency",
-    "snapshot_date_column": "snapshot_date_column",
-    "partition_column": "partition_column",
-    "history_type": "history_type",
-    "retention_period": "retention_period",
-    "source_system": "source_system",
-    "load_pattern": "load_pattern",
-}
-
 _RELATIONSHIP_ALIASES = {
     "relationship_name": "name",
     "name": "name",
@@ -105,6 +108,29 @@ _AI_CONTEXT_ALIASES = {
     "instructions": "instructions",
     "synonyms": "synonyms",
     "examples": "examples",
+    "custom_extension": "custom_extension",
+    "custom_extensions": "custom_extension",
+}
+
+# File 2: metrics, field synonyms, and custom_extensions placeholders, all
+# in one sheet, discriminated by a "Type" column (Metric / Synonym /
+# Custom Extension). This feeds the *base* YAML generation.
+_ENRICHMENT_ALIASES = {
+    "type": "row_type",
+    "row_type": "row_type",
+    "table_name": "table_name",
+    "name": "table_name",
+    "column_name": "column_name",
+    "column_title": "column_name",
+    "metric_name": "metric_name",
+    "metric_expression": "metric_expression",
+    "expression": "metric_expression",
+    "metric_description": "metric_description",
+    "metric_data_type": "metric_datatype",
+    "metric_datatype": "metric_datatype",
+    "synonyms": "synonyms",
+    "custom_extension_vendor": "custom_extension_vendor",
+    "custom_extension_data": "custom_extension_data",
 }
 
 
@@ -228,6 +254,10 @@ def to_int(value: Any) -> Optional[int]:
         return None
 
 
+def dedupe(items: List[str]) -> List[str]:
+    return list(dict.fromkeys(items))
+
+
 # ---------------------------------------------------------------------------
 # Technical data type -> Ossie DataType mapping
 # ---------------------------------------------------------------------------
@@ -288,7 +318,7 @@ class TableMeta:
 
 
 # ---------------------------------------------------------------------------
-# Parsing: metadata file
+# Parsing: metadata file (File 1, required)
 # ---------------------------------------------------------------------------
 
 def parse_metadata(df: pd.DataFrame) -> "Dict[str, TableMeta]":
@@ -336,38 +366,120 @@ def parse_metadata(df: pd.DataFrame) -> "Dict[str, TableMeta]":
 
 
 # ---------------------------------------------------------------------------
-# Parsing: snapshot details file (custom format)
+# Parsing: metrics, field synonyms & custom_extensions placeholders
+# (File 2, optional -- feeds the *base* YAML generation alongside File 1)
 # ---------------------------------------------------------------------------
 
-def parse_snapshot_details(df: Optional[pd.DataFrame]) -> Dict[str, Dict[str, str]]:
+@dataclass
+class EnrichmentResult:
+    metrics: List[Dict[str, str]] = field(default_factory=list)
+    field_synonyms: Dict[Tuple[str, str], List[str]] = field(default_factory=dict)
+    dataset_extensions: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
+    field_extensions: Dict[Tuple[str, str], List[Dict[str, Any]]] = field(default_factory=dict)
+    warnings: List[str] = field(default_factory=list)
+
+
+def _coerce_custom_extension_data(raw_text: str) -> Any:
+    """Custom-extension "data" cells may contain a JSON object/array (used
+    verbatim) or free text (wrapped as ``{"note": "..."}``) so any plain
+    string a business user types in a spreadsheet still produces valid
+    Ossie ``custom_extensions[].data`` (a JSON string).
+    """
+    try:
+        return json.loads(raw_text)
+    except (json.JSONDecodeError, TypeError):
+        return {"note": raw_text}
+
+
+def parse_metrics_synonyms_extensions(df: Optional[pd.DataFrame]) -> EnrichmentResult:
+    result = EnrichmentResult()
     if df is None or df.empty:
-        return {}
-    norm = normalize_columns(df, _SNAPSHOT_ALIASES)
-    result: Dict[str, Dict[str, str]] = {}
-    for _, row in norm.iterrows():
+        return result
+
+    norm = normalize_columns(df, _ENRICHMENT_ALIASES)
+    for pos, (_, row) in enumerate(norm.iterrows()):
+        line_no = pos + 2  # +1 for 0-index, +1 for the header row
+        row_type = clean_str(row.get("row_type")).upper().replace(" ", "_")
         table_name = clean_str(row.get("table_name"))
-        if not table_name:
-            continue
-        info = {
-            k: clean_str(row.get(k))
+        column_name = clean_str(row.get("column_name"))
+
+        has_any_data = any(
+            clean_str(row.get(k))
             for k in (
-                "snapshot_type",
-                "snapshot_frequency",
-                "snapshot_date_column",
-                "partition_column",
-                "history_type",
-                "retention_period",
-                "source_system",
-                "load_pattern",
+                "table_name",
+                "column_name",
+                "metric_name",
+                "metric_expression",
+                "synonyms",
+                "custom_extension_vendor",
+                "custom_extension_data",
             )
-            if clean_str(row.get(k))
-        }
-        result[table_name] = info
+        )
+        if not row_type:
+            if has_any_data:
+                result.warnings.append(
+                    f"Row {line_no}: missing 'Type' (Metric/Synonym/Custom "
+                    f"Extension) -- skipped."
+                )
+            continue
+
+        if row_type == "METRIC":
+            name = clean_str(row.get("metric_name"))
+            expr = clean_str(row.get("metric_expression"))
+            if not name or not expr:
+                result.warnings.append(
+                    f"Row {line_no}: METRIC row missing 'Metric Name' or "
+                    f"'Metric Expression' -- skipped."
+                )
+                continue
+            result.metrics.append(
+                {
+                    "name": name,
+                    "expression": expr,
+                    "description": clean_str(row.get("metric_description")),
+                    "datatype": clean_str(row.get("metric_datatype")),
+                }
+            )
+        elif row_type in ("SYNONYM", "FIELD_SYNONYM"):
+            syns = split_list(row.get("synonyms"))
+            if not table_name or not column_name or not syns:
+                result.warnings.append(
+                    f"Row {line_no}: SYNONYM row missing 'Table Name', "
+                    f"'Column Name', or 'Synonyms' -- skipped."
+                )
+                continue
+            key = (table_name, column_name)
+            result.field_synonyms.setdefault(key, []).extend(syns)
+        elif row_type in ("CUSTOM_EXTENSION", "EXTENSION"):
+            vendor = clean_str(row.get("custom_extension_vendor")) or "COMMON"
+            data_raw = clean_str(row.get("custom_extension_data"))
+            if not table_name or not data_raw:
+                result.warnings.append(
+                    f"Row {line_no}: CUSTOM EXTENSION row missing 'Table "
+                    f"Name' or 'Custom Extension Data' -- skipped."
+                )
+                continue
+            ext = {
+                "vendor_name": vendor,
+                "data": json.dumps(_coerce_custom_extension_data(data_raw), ensure_ascii=False),
+            }
+            if column_name:
+                result.field_extensions.setdefault((table_name, column_name), []).append(ext)
+            else:
+                result.dataset_extensions.setdefault(table_name, []).append(ext)
+        else:
+            result.warnings.append(
+                f"Row {line_no}: unknown Type '{row_type}' -- expected "
+                f"Metric, Synonym, or Custom Extension -- skipped."
+            )
+
+    # Deduplicate accumulated synonym lists while preserving order.
+    result.field_synonyms = {k: dedupe(v) for k, v in result.field_synonyms.items()}
     return result
 
 
 # ---------------------------------------------------------------------------
-# Parsing: relationships file (custom format)
+# Parsing: relationships file (File 3, optional, custom format)
 # ---------------------------------------------------------------------------
 
 def parse_relationships(df: Optional[pd.DataFrame]) -> List[Dict[str, Any]]:
@@ -398,7 +510,11 @@ def parse_relationships(df: Optional[pd.DataFrame]) -> List[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Parsing: AI context file (custom format)
+# Parsing: AI context enrichment file (File 4, optional, custom format)
+#
+# Uploaded *after* a base YAML already exists. Merged in via
+# ``merge_ai_context_into_model`` below, which concatenates onto whatever
+# is already present rather than overwriting it.
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -406,12 +522,13 @@ class AiContextEntry:
     instructions: str = ""
     synonyms: List[str] = field(default_factory=list)
     examples: List[str] = field(default_factory=list)
+    custom_extension: str = ""
 
     def is_empty(self) -> bool:
-        return not (self.instructions or self.synonyms or self.examples)
+        return not (self.instructions or self.synonyms or self.examples or self.custom_extension)
 
     def to_ossie(self) -> Optional[Dict[str, Any]]:
-        if self.is_empty():
+        if not (self.instructions or self.synonyms or self.examples):
             return None
         out: Dict[str, Any] = {}
         if self.instructions:
@@ -442,6 +559,7 @@ def parse_ai_context(
             instructions=clean_str(row.get("instructions")),
             synonyms=split_list(row.get("synonyms")),
             examples=split_list(row.get("examples")),
+            custom_extension=clean_str(row.get("custom_extension")),
         )
         if entry.is_empty():
             continue
@@ -456,7 +574,7 @@ def parse_ai_context(
 
 
 # ---------------------------------------------------------------------------
-# YAML construction helpers
+# YAML construction helpers -- base generation
 # ---------------------------------------------------------------------------
 
 def make_expression(expression: str, dialect: str = "ANSI_SQL") -> Dict[str, Any]:
@@ -467,7 +585,13 @@ def make_custom_extension(vendor_name: str, data: Dict[str, Any]) -> Dict[str, A
     return {"vendor_name": vendor_name, "data": json.dumps(data, ensure_ascii=False)}
 
 
-def build_field(col: ColumnMeta, dialect: str, ai_context: Optional[AiContextEntry]) -> Dict[str, Any]:
+def build_field(
+    col: ColumnMeta,
+    dialect: str,
+    *,
+    extra_synonyms: Optional[List[str]] = None,
+    extra_custom_extensions: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     field_dict: Dict[str, Any] = {
         "name": col.column_name,
         "expression": make_expression(col.column_name, dialect),
@@ -477,10 +601,9 @@ def build_field(col: ColumnMeta, dialect: str, ai_context: Optional[AiContextEnt
         field_dict["datatype"] = datatype
     if col.description:
         field_dict["description"] = col.description
-    if ai_context is not None:
-        ctx = ai_context.to_ossie()
-        if ctx:
-            field_dict["ai_context"] = ctx
+
+    if extra_synonyms:
+        field_dict["ai_context"] = {"synonyms": dedupe(extra_synonyms)}
 
     extension_data: Dict[str, Any] = {}
     if col.technical_data_type:
@@ -495,7 +618,10 @@ def build_field(col: ColumnMeta, dialect: str, ai_context: Optional[AiContextEnt
     if col.primary_key_name:
         extension_data["primary_key_name"] = col.primary_key_name
 
-    field_dict["custom_extensions"] = [make_custom_extension("COMMON", extension_data)]
+    extensions = [make_custom_extension("COMMON", extension_data)]
+    if extra_custom_extensions:
+        extensions.extend(extra_custom_extensions)
+    field_dict["custom_extensions"] = extensions
     return field_dict
 
 
@@ -504,9 +630,9 @@ def build_dataset(
     *,
     dialect: str,
     source_prefix: str,
-    snapshot_info: Optional[Dict[str, str]],
-    dataset_ai_context: Optional[AiContextEntry],
-    field_ai_context: Dict[Tuple[str, str], AiContextEntry],
+    field_synonyms: Dict[Tuple[str, str], List[str]],
+    field_extensions: Dict[Tuple[str, str], List[Dict[str, Any]]],
+    dataset_extensions: Dict[str, List[Dict[str, Any]]],
 ) -> Dict[str, Any]:
     source = f"{source_prefix}.{table.table_name}" if source_prefix else table.table_name
 
@@ -514,20 +640,21 @@ def build_dataset(
 
     fields = []
     for col in table.columns:
-        ctx = field_ai_context.get((table.table_name, col.column_name))
-        fields.append(build_field(col, dialect, ctx))
+        key = (table.table_name, col.column_name)
+        fields.append(
+            build_field(
+                col,
+                dialect,
+                extra_synonyms=field_synonyms.get(key),
+                extra_custom_extensions=field_extensions.get(key),
+            )
+        )
 
     pii_columns = [c.column_name for c in table.columns if c.contains_pii]
 
     dataset: Dict[str, Any] = {"name": table.table_name, "source": source}
     if primary_key:
         dataset["primary_key"] = primary_key
-
-    descriptions = [c for c in table.columns]  # noqa: F841 (kept for readability)
-    if dataset_ai_context is not None:
-        ctx = dataset_ai_context.to_ossie()
-        if ctx:
-            dataset["ai_context"] = ctx
 
     dataset["fields"] = fields
 
@@ -539,8 +666,7 @@ def build_dataset(
         common_data["pii_columns"] = pii_columns
     if common_data:
         extensions.append(make_custom_extension("COMMON", common_data))
-    if snapshot_info:
-        extensions.append(make_custom_extension("SNAPSHOT", snapshot_info))
+    extensions.extend(dataset_extensions.get(table.table_name, []))
     if extensions:
         dataset["custom_extensions"] = extensions
 
@@ -569,6 +695,19 @@ def build_relationship(rel: Dict[str, Any], dialect: str) -> Dict[str, Any]:
     return out
 
 
+def build_metric(metric: Dict[str, str], dialect: str) -> Dict[str, Any]:
+    out: Dict[str, Any] = {
+        "name": metric["name"],
+        "expression": make_expression(metric["expression"], dialect),
+    }
+    if metric.get("description"):
+        out["description"] = metric["description"]
+    raw_dt = clean_str(metric.get("datatype"))
+    if raw_dt:
+        out["datatype"] = raw_dt if raw_dt in VALID_DATATYPES else map_technical_datatype(raw_dt)
+    return out
+
+
 @dataclass
 class BuildResult:
     model: Dict[str, Any]
@@ -582,12 +721,22 @@ def build_semantic_model(
     dialect: str,
     source_prefix: str,
     tables: Dict[str, TableMeta],
-    snapshot_details: Dict[str, Dict[str, str]],
     relationships: List[Dict[str, Any]],
-    model_ai_context: Optional[AiContextEntry],
-    dataset_ai_context: Dict[str, AiContextEntry],
-    field_ai_context: Dict[Tuple[str, str], AiContextEntry],
+    metrics: Optional[List[Dict[str, str]]] = None,
+    field_synonyms: Optional[Dict[Tuple[str, str], List[str]]] = None,
+    dataset_extensions: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    field_extensions: Optional[Dict[Tuple[str, str], List[Dict[str, Any]]]] = None,
 ) -> BuildResult:
+    """Build the *base* Ossie semantic model from table/column metadata plus
+    optional metrics, field synonyms, custom_extensions placeholders, and
+    relationships. AI-context enrichment is intentionally NOT handled here
+    -- see ``merge_ai_context_into_model`` for the later enrichment step.
+    """
+    metrics = metrics or []
+    field_synonyms = field_synonyms or {}
+    dataset_extensions = dataset_extensions or {}
+    field_extensions = field_extensions or {}
+
     warnings: List[str] = []
     if not tables:
         raise ValueError("No tables/columns found. Check the metadata file contents.")
@@ -598,9 +747,9 @@ def build_semantic_model(
             table,
             dialect=dialect,
             source_prefix=source_prefix,
-            snapshot_info=snapshot_details.get(table_name),
-            dataset_ai_context=dataset_ai_context.get(table_name),
-            field_ai_context=field_ai_context,
+            field_synonyms=field_synonyms,
+            field_extensions=field_extensions,
+            dataset_extensions=dataset_extensions,
         )
         datasets.append(dataset)
 
@@ -624,20 +773,113 @@ def build_semantic_model(
     semantic_model_entry: Dict[str, Any] = {"name": model_name}
     if model_description:
         semantic_model_entry["description"] = model_description
-    if model_ai_context is not None:
-        ctx = model_ai_context.to_ossie()
-        if ctx:
-            semantic_model_entry["ai_context"] = ctx
     semantic_model_entry["datasets"] = datasets
     if rel_out:
         semantic_model_entry["relationships"] = rel_out
+
+    metrics_out = []
+    for m in metrics:
+        try:
+            metrics_out.append(build_metric(m, dialect))
+        except KeyError as exc:  # pragma: no cover -- defensive
+            warnings.append(f"Skipping malformed metric entry: missing {exc}.")
+    if metrics_out:
+        semantic_model_entry["metrics"] = metrics_out
 
     model = {"version": OSSIE_VERSION, "semantic_model": [semantic_model_entry]}
     return BuildResult(model=model, warnings=warnings)
 
 
 # ---------------------------------------------------------------------------
-# YAML rendering
+# AI-context enrichment -- merges into an EXISTING (possibly user-edited)
+# model, concatenating rather than overwriting.
+# ---------------------------------------------------------------------------
+
+def _merge_ai_context_block(
+    existing: Optional[Dict[str, Any]], entry: AiContextEntry
+) -> Optional[Dict[str, Any]]:
+    merged = dict(existing) if existing else {}
+    if entry.instructions:
+        if merged.get("instructions"):
+            merged["instructions"] = f"{merged['instructions'].rstrip()}\n\n{entry.instructions}"
+        else:
+            merged["instructions"] = entry.instructions
+    if entry.synonyms:
+        merged["synonyms"] = dedupe(list(merged.get("synonyms") or []) + entry.synonyms)
+    if entry.examples:
+        merged["examples"] = dedupe(list(merged.get("examples") or []) + entry.examples)
+    return merged or None
+
+
+def _append_custom_extension_from_text(
+    existing: Optional[List[Dict[str, Any]]], vendor_name: str, raw_text: str
+) -> List[Dict[str, Any]]:
+    lst = list(existing) if existing else []
+    if not raw_text:
+        return lst
+    lst.append(
+        {
+            "vendor_name": vendor_name,
+            "data": json.dumps(_coerce_custom_extension_data(raw_text), ensure_ascii=False),
+        }
+    )
+    return lst
+
+
+def merge_ai_context_into_model(
+    model: Dict[str, Any],
+    model_ctx: Optional[AiContextEntry],
+    dataset_ctx: Dict[str, AiContextEntry],
+    field_ctx: Dict[Tuple[str, str], AiContextEntry],
+) -> Dict[str, Any]:
+    """Return a NEW model dict with AI-context instructions/synonyms/examples
+    concatenated onto whatever is already present (never overwritten), and
+    any ``Custom Extension`` cell values appended as new ``custom_extensions``
+    entries (``vendor_name: AI_ENRICHMENT``). Safe to call repeatedly --
+    each call only adds to the model, so re-running enrichment (e.g. after
+    manual edits) is idempotent-ish additive rather than destructive.
+    """
+    new_model = copy.deepcopy(model)
+    entries = new_model.get("semantic_model") or []
+    if not entries:
+        return new_model
+    sm = entries[0]
+
+    if model_ctx is not None:
+        merged = _merge_ai_context_block(sm.get("ai_context"), model_ctx)
+        if merged:
+            sm["ai_context"] = merged
+        if model_ctx.custom_extension:
+            sm["custom_extensions"] = _append_custom_extension_from_text(
+                sm.get("custom_extensions"), "AI_ENRICHMENT", model_ctx.custom_extension
+            )
+
+    for dataset in sm.get("datasets", []):
+        ctx = dataset_ctx.get(dataset.get("name"))
+        if ctx is not None:
+            merged = _merge_ai_context_block(dataset.get("ai_context"), ctx)
+            if merged:
+                dataset["ai_context"] = merged
+            if ctx.custom_extension:
+                dataset["custom_extensions"] = _append_custom_extension_from_text(
+                    dataset.get("custom_extensions"), "AI_ENRICHMENT", ctx.custom_extension
+                )
+        for fld in dataset.get("fields", []):
+            fctx = field_ctx.get((dataset.get("name"), fld.get("name")))
+            if fctx is not None:
+                merged = _merge_ai_context_block(fld.get("ai_context"), fctx)
+                if merged:
+                    fld["ai_context"] = merged
+                if fctx.custom_extension:
+                    fld["custom_extensions"] = _append_custom_extension_from_text(
+                        fld.get("custom_extensions"), "AI_ENRICHMENT", fctx.custom_extension
+                    )
+
+    return new_model
+
+
+# ---------------------------------------------------------------------------
+# YAML rendering / parsing
 # ---------------------------------------------------------------------------
 
 class _OrderedDumper(yaml.SafeDumper):
@@ -668,6 +910,15 @@ def to_yaml(model: Dict[str, Any]) -> str:
         width=100,
     )
     return header + body
+
+
+def parse_yaml_text(text: str) -> Dict[str, Any]:
+    """Parse user-edited YAML text back into a model dict. Raises
+    ``yaml.YAMLError`` on malformed YAML."""
+    loaded = yaml.safe_load(text)
+    if not isinstance(loaded, dict):
+        raise ValueError("The YAML document must parse to a mapping (object) at the top level.")
+    return loaded
 
 
 # ---------------------------------------------------------------------------

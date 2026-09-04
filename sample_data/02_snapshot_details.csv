@@ -1,6 +1,0 @@
-Table Name,Snapshot Type,Snapshot Frequency,Snapshot Date Column,Partition Column,History Type,Retention Period,Source System,Load Pattern
-FACT_POSITION,Incremental,Daily,AS_OF_DATE_ID,AS_OF_DATE_ID,Type 2 (append-only daily snapshot),7 Years,PORTFOLIO_ACCOUNTING_SYSTEM,Batch
-DIM_ACCOUNT,Full,Daily,,,Type 2 (tracked via CLOSE_DATE),Indefinite,CRM_SYSTEM,Batch
-DIM_CLIENT,Full,Daily,,,Type 1,Indefinite,CRM_SYSTEM,Batch
-DIM_SECURITY,Full,Weekly,,,Type 1,Indefinite,MARKET_DATA_VENDOR,Batch
-DIM_DATE,Full,Static (generated once),,,Static,Indefinite,GENERATED,Batch

@@ -135,26 +135,59 @@ METADATA_ROWS = [
      "SRC_SYS_CD", "30", "VARCHAR2(30)", 10, "N", "N", "N", ""),
 ]
 
-SNAPSHOT_HEADERS = [
+# File 2: metrics (aggregate measures), basic field-level synonyms, and
+# custom_extensions placeholders for tables/fields -- all in one sheet,
+# discriminated by the "Type" column. This feeds the *base* YAML
+# generation together with the table/column metadata file.
+ENRICHMENT_HEADERS = [
+    "Type",
     "Table Name",
-    "Snapshot Type",
-    "Snapshot Frequency",
-    "Snapshot Date Column",
-    "Partition Column",
-    "History Type",
-    "Retention Period",
-    "Source System",
-    "Load Pattern",
+    "Column Name",
+    "Metric Name",
+    "Metric Expression",
+    "Metric Description",
+    "Metric Data Type",
+    "Synonyms",
+    "Custom Extension Vendor",
+    "Custom Extension Data",
 ]
 
-SNAPSHOT_ROWS = [
-    ("FACT_POSITION", "Incremental", "Daily", "AS_OF_DATE_ID", "AS_OF_DATE_ID",
-     "Type 2 (append-only daily snapshot)", "7 Years", "PORTFOLIO_ACCOUNTING_SYSTEM", "Batch"),
-    ("DIM_ACCOUNT", "Full", "Daily", "", "", "Type 2 (tracked via CLOSE_DATE)", "Indefinite",
-     "CRM_SYSTEM", "Batch"),
-    ("DIM_CLIENT", "Full", "Daily", "", "", "Type 1", "Indefinite", "CRM_SYSTEM", "Batch"),
-    ("DIM_SECURITY", "Full", "Weekly", "", "", "Type 1", "Indefinite", "MARKET_DATA_VENDOR", "Batch"),
-    ("DIM_DATE", "Full", "Static (generated once)", "", "", "Static", "Indefinite", "GENERATED", "Batch"),
+ENRICHMENT_ROWS = [
+    # ---- Metrics: aggregate expressions spanning FACT_POSITION ----------
+    ("Metric", "", "", "total_market_value", "SUM(FACT_POSITION.MARKET_VALUE)",
+     "Total market value of all positions across accounts.", "Decimal", "", "", ""),
+    ("Metric", "", "", "total_cost_basis", "SUM(FACT_POSITION.COST_BASIS)",
+     "Total cost basis of all positions.", "Decimal", "", "", ""),
+    ("Metric", "", "", "total_unrealized_gain_loss", "SUM(FACT_POSITION.UNREALIZED_GAIN_LOSS)",
+     "Total unrealized gain or loss across all positions.", "Decimal", "", "", ""),
+    ("Metric", "", "", "distinct_securities_held", "COUNT(DISTINCT FACT_POSITION.SECURITY_ID)",
+     "Number of distinct securities held across all positions.", "Integer", "", "", ""),
+    ("Metric", "", "", "average_position_value", "AVG(FACT_POSITION.MARKET_VALUE)",
+     "Average market value per position.", "Decimal", "", "", ""),
+
+    # ---- Field synonyms ---------------------------------------------------
+    ("Synonym", "FACT_POSITION", "MARKET_VALUE", "", "", "", "",
+     "position value, holding value, market val", "", ""),
+    ("Synonym", "FACT_POSITION", "QUANTITY", "", "", "", "",
+     "units held, shares held, position size", "", ""),
+    ("Synonym", "FACT_POSITION", "UNREALIZED_GAIN_LOSS", "", "", "", "",
+     "unrealized P&L, paper gain, paper loss", "", ""),
+    ("Synonym", "DIM_ACCOUNT", "ACCOUNT_TYPE", "", "", "", "",
+     "account category, wrapper type, plan type", "", ""),
+    ("Synonym", "DIM_ACCOUNT", "ACCOUNT_NUMBER", "", "", "", "",
+     "account number, acct no", "", ""),
+    ("Synonym", "DIM_CLIENT", "CLIENT_NAME", "", "", "", "",
+     "client name, customer name, household name", "", ""),
+    ("Synonym", "DIM_CLIENT", "RISK_PROFILE", "", "", "", "",
+     "risk tolerance, investor risk level", "", ""),
+    ("Synonym", "DIM_SECURITY", "SECURITY_TYPE", "", "", "", "",
+     "asset type, instrument type, product type", "", ""),
+
+    # ---- Custom extension placeholders (table-level and field-level) ----
+    ("Custom Extension", "FACT_POSITION", "", "", "", "", "", "",
+     "SNOWFLAKE", '{"clustering_keys": ["AS_OF_DATE_ID", "ACCOUNT_ID"]}'),
+    ("Custom Extension", "DIM_ACCOUNT", "ACCOUNT_NUMBER", "", "", "", "", "",
+     "COMMON", '{"masking_policy": "MASK_ACCOUNT_NUMBER"}'),
 ]
 
 RELATIONSHIP_HEADERS = [
@@ -178,12 +211,18 @@ RELATIONSHIP_ROWS = [
      "Many-to-One", "Each account is owned by exactly one client/household."),
 ]
 
+# File 4: AI context ENRICHMENT -- uploaded *after* a base YAML already
+# exists. Instructions/Synonyms/Examples are concatenated onto whatever a
+# field/table/model already has (e.g. synonyms from File 2); they never
+# overwrite. "Custom Extension" is appended as a new custom_extensions
+# entry (vendor_name: AI_ENRICHMENT).
 AI_CONTEXT_HEADERS = [
     "Table Name",
     "Column Name",
     "Instructions",
     "Synonyms",
     "Examples",
+    "Custom Extension",
 ]
 
 AI_CONTEXT_ROWS = [
@@ -194,62 +233,79 @@ AI_CONTEXT_ROWS = [
      "portfolio model, wealth management model, investment book of record",
      "What is the total market value by account as of the latest date?; "
      "Show the top 10 holdings by market value for a given client; "
-     "How has unrealized gain/loss trended over the last quarter?"),
+     "How has unrealized gain/loss trended over the last quarter?",
+     '{"generated_by": "AI enrichment pass", "review_status": "pending"}'),
     ("FACT_POSITION", "",
      "Daily snapshot of security holdings per account. One row per account/security/date "
      "combination captures the quantity held and its valuation as of that date.",
      "holdings, positions, portfolio snapshot, book of record",
-     "Total market value by account; positions with the largest unrealized loss today"),
+     "Total market value by account; positions with the largest unrealized loss today",
+     '{"sensitivity": "confidential", "data_owner": "Portfolio Analytics Team"}'),
+    # NOTE: MARKET_VALUE already has base synonyms from File 2 (Synonym row);
+    # these are ADDITIONAL synonyms that get concatenated onto that list,
+    # not a replacement for it.
     ("FACT_POSITION", "MARKET_VALUE",
      "Primary measure of position value; equals QUANTITY multiplied by MARKET_PRICE, in LOCAL_CURRENCY.",
-     "position value, holding value, market val",
-     ""),
+     "mkt value, MV",
+     "",
+     '{"lineage": "derived = QUANTITY * MARKET_PRICE"}'),
     ("FACT_POSITION", "UNREALIZED_GAIN_LOSS",
      "Computed as MARKET_VALUE minus COST_BASIS. Positive values indicate an unrealized gain, "
      "negative values indicate an unrealized loss.",
-     "unrealized P&L, paper gain, paper loss",
+     "unrealized PnL",
+     "",
      ""),
     ("FACT_POSITION", "QUANTITY",
      "Number of shares/units of the security held in the account as of the snapshot date.",
-     "units held, shares held, position size",
+     "",
+     "",
      ""),
     ("DIM_ACCOUNT", "",
      "One row per investment account owned by a client. Slowly changing dimension tracked via "
      "OPEN_DATE/CLOSE_DATE and ACCOUNT_STATUS.",
      "accounts, portfolios, investment accounts",
+     "",
      ""),
     ("DIM_ACCOUNT", "ACCOUNT_TYPE",
      "The account wrapper/tax treatment, e.g. Brokerage, IRA, 401k, or Trust.",
-     "account category, wrapper type, plan type",
+     "",
+     "",
      ""),
     ("DIM_ACCOUNT", "ACCOUNT_NUMBER",
      "Customer-facing account number. Treat as sensitive; avoid exposing in shared reports.",
-     "account number, acct no",
+     "",
+     "",
      ""),
     ("DIM_CLIENT", "",
      "One row per client or household relationship that owns one or more accounts.",
      "customers, households, investors",
+     "",
      ""),
     ("DIM_CLIENT", "CLIENT_NAME",
      "Legal name of the client. Contains PII; mask or omit in externally shared results.",
-     "client name, customer name, household name",
+     "",
+     "",
      ""),
     ("DIM_CLIENT", "RISK_PROFILE",
      "Client's stated risk tolerance, used to evaluate portfolio suitability.",
-     "risk tolerance, investor risk level",
+     "",
+     "",
      ""),
     ("DIM_SECURITY", "",
      "One row per tradable security or instrument that can appear in a position.",
      "instruments, holdings reference, products, securities master",
+     "",
      ""),
     ("DIM_SECURITY", "SECURITY_TYPE",
      "Broad instrument category, e.g. Equity, Bond, ETF, Mutual Fund, or Cash.",
-     "asset type, instrument type, product type",
+     "",
+     "",
      ""),
     ("DIM_DATE", "",
      "Standard calendar date dimension used to slice and trend positions by day, month, "
      "quarter, or year.",
      "calendar, dates, calendar dimension",
+     "",
      ""),
 ]
 
@@ -265,7 +321,7 @@ def _write_csv(path, headers, rows):
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     _write_csv(os.path.join(OUT_DIR, "01_table_column_metadata.csv"), METADATA_HEADERS, METADATA_ROWS)
-    _write_csv(os.path.join(OUT_DIR, "02_snapshot_details.csv"), SNAPSHOT_HEADERS, SNAPSHOT_ROWS)
+    _write_csv(os.path.join(OUT_DIR, "02_metrics_synonyms_extensions.csv"), ENRICHMENT_HEADERS, ENRICHMENT_ROWS)
     _write_csv(os.path.join(OUT_DIR, "03_relationships.csv"), RELATIONSHIP_HEADERS, RELATIONSHIP_ROWS)
     _write_csv(os.path.join(OUT_DIR, "04_ai_context.csv"), AI_CONTEXT_HEADERS, AI_CONTEXT_ROWS)
     print(f"Wrote sample files to {OUT_DIR}")
