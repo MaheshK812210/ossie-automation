@@ -1,0 +1,15 @@
+Table Name,Column Name,Instructions,Synonyms,Examples
+MODEL,,"Use this semantic model to answer questions about investment clients, their accounts, the securities they hold, and daily position valuations. FACT_POSITION is the daily grain fact table; DIM_ACCOUNT, DIM_CLIENT, DIM_SECURITY, and DIM_DATE provide descriptive context.","portfolio model, wealth management model, investment book of record",What is the total market value by account as of the latest date?; Show the top 10 holdings by market value for a given client; How has unrealized gain/loss trended over the last quarter?
+FACT_POSITION,,Daily snapshot of security holdings per account. One row per account/security/date combination captures the quantity held and its valuation as of that date.,"holdings, positions, portfolio snapshot, book of record",Total market value by account; positions with the largest unrealized loss today
+FACT_POSITION,MARKET_VALUE,"Primary measure of position value; equals QUANTITY multiplied by MARKET_PRICE, in LOCAL_CURRENCY.","position value, holding value, market val",
+FACT_POSITION,UNREALIZED_GAIN_LOSS,"Computed as MARKET_VALUE minus COST_BASIS. Positive values indicate an unrealized gain, negative values indicate an unrealized loss.","unrealized P&L, paper gain, paper loss",
+FACT_POSITION,QUANTITY,Number of shares/units of the security held in the account as of the snapshot date.,"units held, shares held, position size",
+DIM_ACCOUNT,,One row per investment account owned by a client. Slowly changing dimension tracked via OPEN_DATE/CLOSE_DATE and ACCOUNT_STATUS.,"accounts, portfolios, investment accounts",
+DIM_ACCOUNT,ACCOUNT_TYPE,"The account wrapper/tax treatment, e.g. Brokerage, IRA, 401k, or Trust.","account category, wrapper type, plan type",
+DIM_ACCOUNT,ACCOUNT_NUMBER,Customer-facing account number. Treat as sensitive; avoid exposing in shared reports.,"account number, acct no",
+DIM_CLIENT,,One row per client or household relationship that owns one or more accounts.,"customers, households, investors",
+DIM_CLIENT,CLIENT_NAME,Legal name of the client. Contains PII; mask or omit in externally shared results.,"client name, customer name, household name",
+DIM_CLIENT,RISK_PROFILE,"Client's stated risk tolerance, used to evaluate portfolio suitability.","risk tolerance, investor risk level",
+DIM_SECURITY,,One row per tradable security or instrument that can appear in a position.,"instruments, holdings reference, products, securities master",
+DIM_SECURITY,SECURITY_TYPE,"Broad instrument category, e.g. Equity, Bond, ETF, Mutual Fund, or Cash.","asset type, instrument type, product type",
+DIM_DATE,,"Standard calendar date dimension used to slice and trend positions by day, month, quarter, or year.","calendar, dates, calendar dimension",

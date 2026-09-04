@@ -1,0 +1,5 @@
+Relationship Name,From Table,From Columns,To Table,To Columns,Relationship Type,Description
+FACT_POSITION_TO_ACCOUNT,FACT_POSITION,ACCOUNT_ID,DIM_ACCOUNT,ACCOUNT_ID,Many-to-One,Each position belongs to exactly one account.
+FACT_POSITION_TO_SECURITY,FACT_POSITION,SECURITY_ID,DIM_SECURITY,SECURITY_ID,Many-to-One,Each position holds exactly one security.
+FACT_POSITION_TO_DATE,FACT_POSITION,AS_OF_DATE_ID,DIM_DATE,DATE_ID,Many-to-One,Each position snapshot is tied to exactly one calendar date.
+ACCOUNT_TO_CLIENT,DIM_ACCOUNT,CLIENT_ID,DIM_CLIENT,CLIENT_ID,Many-to-One,Each account is owned by exactly one client/household.
