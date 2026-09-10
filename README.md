@@ -2,8 +2,9 @@
 
 A [Streamlit](https://streamlit.io/) app that turns spreadsheets exported
 from a data catalog into a validated **Apache Ossie** ("Open Semantic
-Interchange") semantic model YAML file -- in two stages, with a built-in
-YAML viewer/editor in between.
+Interchange") semantic model YAML file, with a built-in YAML viewer/editor,
+and can then export that model straight into a **Power BI semantic model**
+-- no desktop application required for any of it.
 
 Spec reference: [apache/ossie/core-spec](https://github.com/apache/ossie/tree/main/core-spec)
 (Ossie core metadata specification, version `0.2.0.dev0`).
@@ -46,6 +47,34 @@ has, and **appends** any `Custom Extension` value as a brand-new
 `custom_extensions` entry. This lets a business/domain reviewer layer on
 context without clobbering what the base generation (or a previous
 enrichment pass) already produced.
+
+### Stage 3 -- export to a BI tool (optional)
+
+Once a base YAML exists, an **"Export to a BI tool"** section lets you
+convert it with one click. Two options are shown; only **Power BI** is
+implemented (Tableau appears as a clearly-labeled "not built yet" option):
+
+- **Power BI**: generates a real **TMSL** (`model.bim`) document and a
+  **TMDL**-based Power BI Project folder (the same text-based format behind
+  modern `.pbip` projects and Fabric's git-integrated semantic models).
+  - Download it as a ready-to-use `.zip` -- open the folder directly in
+    Power BI Desktop via *File \u2192 Open \u2192 Power BI Project*, commit it to
+    git for Fabric's git integration, or deploy it headlessly with the
+    Tabular Editor CLI / Fabric REST API. None of that requires generating
+    it from a desktop app.
+  - Ossie `datasets`/`fields` become Tabular `tables`/`columns`; Ossie
+    `relationships` become Tabular relationships (many-to-one, matching
+    Ossie's own semantics); Ossie `metrics` become DAX `measures` via a
+    best-effort ANSI SQL \u2192 DAX translator (`table.column` \u2192
+    `table[column]`, `COUNT(DISTINCT x)` \u2192 `DISTINCTCOUNT(x)`, `AVG` \u2192
+    `AVERAGE`, and a single top-level `a / b` \u2192 the zero-safe `DIVIDE(a, b)`).
+  - Since this sandboxed environment has no live Power BI/Fabric workspace
+    or connected data warehouse, there's a **"Run metrics against synthetic
+    sample data"** button: it generates small, randomly-typed sample
+    dataframes matching your schema and runs each metric's original SQL
+    expression against them with an in-memory DuckDB engine, just to prove
+    the metric logic (and its DAX translation) executes correctly
+    end-to-end. These are illustrative values, not real business results.
 
 ## What you upload
 
@@ -161,13 +190,15 @@ every time it changes, and the app reports any validation errors inline.
 ## Project layout
 
 ```
-app.py                          Streamlit UI (two-stage workflow)
-ossie_builder.py                Parsing + YAML generation/merge logic (framework-free, unit-tested)
-schema/ossie-schema.json         Official Apache Ossie JSON Schema (bundled for validation)
-sample_data/                     Example input files (Account/Position data model)
-scripts/generate_sample_data.py  Regenerates the sample_data/ files
-tests/test_ossie_builder.py      Pytest suite: base generation + AI-context enrichment merge behavior
-.streamlit/config.toml           Dev server port/config
+app.py                            Streamlit UI (Stage 1 -> Stage 2 -> Stage 3 workflow)
+ossie_builder.py                  Ossie parsing + YAML generation/merge logic (framework-free, unit-tested)
+powerbi_export.py                 Ossie -> Power BI (TMSL/TMDL) conversion + synthetic-data metric preview
+schema/ossie-schema.json           Official Apache Ossie JSON Schema (bundled for validation)
+sample_data/                       Example input files (Account/Position data model)
+scripts/generate_sample_data.py    Regenerates the sample_data/ files
+tests/test_ossie_builder.py        Pytest suite: base generation + AI-context enrichment merge behavior
+tests/test_powerbi_export.py       Pytest suite: SQL->DAX translation, TMSL/TMDL output, metric preview
+.streamlit/config.toml             Dev server port/config + color theme
 ```
 
 ## Running the tests
@@ -188,3 +219,9 @@ pytest
   content again (it's a simple additive merge) -- avoid re-uploading the
   same enrichment file twice unless you intend to duplicate its synonyms
   and appended `custom_extensions`.
+- The Power BI export is a best-effort structural conversion (SQL -> DAX
+  translation, Tabular relationship mapping). Composite relationship keys
+  are reduced to their first column pair (Tabular relationships are
+  single-column), and the placeholder Power Query (M) source expressions
+  need to be pointed at a real data source before deploying for actual use.
+  Review the generated `model.bim`/TMDL before deploying to production.

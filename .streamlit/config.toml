@@ -7,3 +7,11 @@ enableXsrfProtection = false
 
 [browser]
 gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#6C5CE7"
+backgroundColor = "#F6F3FF"
+secondaryBackgroundColor = "#ECE5FD"
+textColor = "#1E1B2E"
+font = "sans serif"
