@@ -97,6 +97,66 @@ def test_sql_to_dax_leaves_ambiguous_multi_division_untouched():
     assert "a[x]" in out and "b[y]" in out and "c[z]" in out
 
 
+def test_build_snowflake_m_expression():
+    m = pbe.build_snowflake_m_expression(
+        "FACT_POSITION", "WEALTH_DB.PUBLIC.FACT_POSITION", "myorg-myaccount.snowflakecomputing.com", "COMPUTE_WH"
+    )
+    assert 'Snowflake.Databases("myorg-myaccount.snowflakecomputing.com", "COMPUTE_WH")' in m
+    assert 'Name="WEALTH_DB", Kind="Database"' in m
+    assert 'Name="PUBLIC", Kind="Schema"' in m
+    assert 'Name="FACT_POSITION", Kind="Table"' in m
+    assert "Role=" not in m
+
+
+def test_build_snowflake_m_expression_with_role():
+    m = pbe.build_snowflake_m_expression(
+        "FACT_POSITION",
+        "WEALTH_DB.PUBLIC.FACT_POSITION",
+        "myorg-myaccount.snowflakecomputing.com",
+        "COMPUTE_WH",
+        role="ANALYST_ROLE",
+    )
+    assert '[Role="ANALYST_ROLE"]' in m
+
+
+def test_build_snowflake_m_expression_falls_back_for_short_source():
+    m = pbe.build_snowflake_m_expression("T", "T", "acct.snowflakecomputing.com", "WH")
+    assert 'Name="<YOUR_DATABASE>", Kind="Database"' in m
+    assert 'Name="<YOUR_SCHEMA>", Kind="Schema"' in m
+    assert 'Name="T", Kind="Table"' in m
+
+
+def test_build_tmsl_model_uses_snowflake_data_source_when_given(account_position_model):
+    data_source = {"type": "snowflake", "account": "acct.snowflakecomputing.com", "warehouse": "WH", "role": "R1"}
+    tmsl = pbe.build_tmsl_model(account_position_model, data_source=data_source)
+    fact = next(t for t in tmsl["model"]["tables"] if t["name"] == "FACT_POSITION")
+    m_expr = fact["partitions"][0]["source"]["expression"]
+    assert "Snowflake.Databases" in m_expr
+    assert '[Role="R1"]' in m_expr
+    assert "Sql.Database" not in m_expr
+
+
+def test_build_tmsl_model_defaults_to_placeholder_source_without_data_source(account_position_model):
+    tmsl = pbe.build_tmsl_model(account_position_model)
+    fact = next(t for t in tmsl["model"]["tables"] if t["name"] == "FACT_POSITION")
+    m_expr = fact["partitions"][0]["source"]["expression"]
+    assert "Sql.Database" in m_expr
+    assert "Snowflake" not in m_expr
+
+
+def test_convert_to_powerbi_threads_data_source_through_zip(account_position_model):
+    data_source = {"type": "snowflake", "account": "acct.snowflakecomputing.com", "warehouse": "WH"}
+    export = pbe.convert_to_powerbi(account_position_model, "account_position_model", data_source=data_source)
+    assert "Snowflake.Databases" in export.tmsl_json
+    tmdl_fact = export.tmdl_files["definition/tables/FACT_POSITION.tmdl"]
+    assert "Snowflake.Databases" in tmdl_fact
+
+    zf = zipfile.ZipFile(io.BytesIO(export.zip_bytes))
+    bim_doc = json.loads(zf.read("account_position_model.SemanticModel/model.bim"))
+    fact = next(t for t in bim_doc["model"]["tables"] if t["name"] == "FACT_POSITION")
+    assert "Snowflake.Databases" in fact["partitions"][0]["source"]["expression"]
+
+
 def test_build_tmsl_model_structure(account_position_model):
     tmsl = pbe.build_tmsl_model(account_position_model)
     assert tmsl["name"] == "account_position_model"

@@ -679,10 +679,64 @@ def _render_stage_1_and_2():
                 "integration, or deploy it headlessly with the Tabular Editor CLI / Fabric REST API "
                 "\u2014 none of that requires generating it from a desktop app."
             )
-            if st.button("\U0001f504 Convert to Power BI semantic model", type="primary", key="convert_pbi"):
+
+            use_snowflake = st.checkbox("\U0001f9ca Use Snowflake as the data source", key="pbi_use_snowflake")
+            if use_snowflake:
+                st.caption(
+                    "Fill this in to generate real `Snowflake.Databases(...)` M code \u2014 Power "
+                    "BI's native Snowflake connector syntax, ready to connect. Database/schema/"
+                    "table come from each dataset's Ossie `source` field (set via **Source "
+                    "prefix** in the sidebar, e.g. `MY_DB.PUBLIC`). **No credentials are entered "
+                    "or stored here** \u2014 Power BI prompts for those (username/password, SSO, "
+                    "key-pair, ...) the first time the model connects or refreshes."
+                )
+                if source_prefix.strip().count(".") < 1:
+                    st.warning(
+                        "Set **Source prefix** in the sidebar to `YOUR_DATABASE.YOUR_SCHEMA` so "
+                        "the generated M code points at the right Snowflake database and schema "
+                        "(currently it's incomplete)."
+                    )
+            else:
+                st.caption(
+                    "Without Snowflake configured, each table's Power Query source is a generic "
+                    "placeholder you'd hand-edit later."
+                )
+
+            # All of the Snowflake fields (when shown) and the conversion trigger live inside one
+            # form so their values are submitted together, atomically, in a single event -- a
+            # plain button here could race with a text_input's value not yet having committed to
+            # session_state if the button is clicked immediately after typing.
+            with st.form("pbi_convert_form"):
+                sf_account = sf_warehouse = sf_role = ""
+                if use_snowflake:
+                    sf_cols = st.columns(3)
+                    with sf_cols[0]:
+                        sf_account = st.text_input(
+                            "Account URL", placeholder="myorg-myaccount.snowflakecomputing.com", key="pbi_sf_account"
+                        )
+                    with sf_cols[1]:
+                        sf_warehouse = st.text_input("Warehouse", placeholder="COMPUTE_WH", key="pbi_sf_warehouse")
+                    with sf_cols[2]:
+                        sf_role = st.text_input("Role (optional)", key="pbi_sf_role")
+                convert_clicked = st.form_submit_button(
+                    "\U0001f504 Convert to Power BI semantic model", type="primary"
+                )
+
+            if convert_clicked:
+                data_source = None
+                if use_snowflake and sf_account.strip() and sf_warehouse.strip():
+                    data_source = {
+                        "type": "snowflake",
+                        "account": sf_account.strip(),
+                        "warehouse": sf_warehouse.strip(),
+                        "role": sf_role.strip() or None,
+                    }
+                elif use_snowflake:
+                    st.warning("Enter at least the Account URL and Warehouse to generate Snowflake M code \u2014 falling back to the generic placeholder for now.")
+
                 try:
                     st.session_state["pbi_export"] = pbe.convert_to_powerbi(
-                        st.session_state.model, model_name.strip() or "semantic_model"
+                        st.session_state.model, model_name.strip() or "semantic_model", data_source=data_source
                     )
                     st.session_state["pbi_metric_preview"] = None
                 except Exception as e:  # noqa: BLE001
@@ -708,6 +762,20 @@ def _render_stage_1_and_2():
                     type="primary",
                     key="dl_pbi_zip",
                 )
+                if "Snowflake.Databases" in export.tmsl_json:
+                    st.caption(
+                        "\u2705 This export uses real Snowflake connection code. Next: unzip it, "
+                        "open the `.SemanticModel` folder in Power BI Desktop as a Power BI Project "
+                        "(*File \u2192 Open \u2192 Power BI Project*), then hit **Refresh** \u2014 Power "
+                        "BI will prompt you for Snowflake sign-in (username/password, SSO, or "
+                        "key-pair) and pull real data into the measures above."
+                    )
+                else:
+                    st.caption(
+                        "This export uses a generic placeholder data source. Expand **Connect to "
+                        "Snowflake** above, fill in your account/warehouse, and re-convert to get "
+                        "real, ready-to-connect Snowflake M code instead."
+                    )
 
                 pbi_view_tabs = st.tabs(["model.bim (TMSL)", "TMDL files", "\u25b6\ufe0f Preview metrics (DAX)"])
                 with pbi_view_tabs[0]:

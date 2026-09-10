@@ -189,13 +189,74 @@ def build_m_expression(table_name: str, source: str) -> str:
     )
 
 
+def build_snowflake_m_expression(
+    table_name: str,
+    source: str,
+    account: str,
+    warehouse: str,
+    role: Optional[str] = None,
+) -> str:
+    """A real, connector-accurate Power Query M partition source for
+    Snowflake, using Power BI's native ``Snowflake.Databases`` connector
+    (the same M code Power BI Desktop's Get Data > Snowflake wizard
+    generates). ``source`` supplies the database/schema/table (from the
+    Ossie dataset's ``source`` field, i.e. the app's "Source prefix" +
+    table name) -- ``account``/``warehouse``/``role`` are your Snowflake
+    connection settings, not credentials. Credentials themselves are never
+    embedded here; Power BI prompts for them (username/password, SSO,
+    key-pair, etc.) the first time the model connects or refreshes.
+    """
+    parts = (source or table_name).split(".")
+    if len(parts) >= 3:
+        database, schema, table = parts[0], parts[1], ".".join(parts[2:])
+    elif len(parts) == 2:
+        database, schema, table = "<YOUR_DATABASE>", parts[0], parts[1]
+    else:
+        database, schema, table = "<YOUR_DATABASE>", "<YOUR_SCHEMA>", parts[0]
+
+    options = f', [Role="{role}"]' if role else ""
+    return (
+        "let\n"
+        f'    Source = Snowflake.Databases("{account}", "{warehouse}"{options}),\n'
+        f'    {table}_Db = Source{{[Name="{database}", Kind="Database"]}}[Data],\n'
+        f'    {table}_Schema = {table}_Db{{[Name="{schema}", Kind="Schema"]}}[Data],\n'
+        f'    {table}_Table = {table}_Schema{{[Name="{table}", Kind="Table"]}}[Data]\n'
+        "in\n"
+        f"    {table}_Table"
+    )
+
+
+def _build_partition_m_expression(table_name: str, source: str, data_source: Optional[Dict[str, Any]]) -> str:
+    if data_source and data_source.get("type") == "snowflake":
+        return build_snowflake_m_expression(
+            table_name,
+            source,
+            account=data_source["account"],
+            warehouse=data_source["warehouse"],
+            role=data_source.get("role"),
+        )
+    return build_m_expression(table_name, source)
+
+
 # ---------------------------------------------------------------------------
 # TMSL (model.bim) builder
 # ---------------------------------------------------------------------------
 
-def build_tmsl_model(ossie_model: Dict[str, Any], compatibility_level: int = 1567) -> Dict[str, Any]:
+def build_tmsl_model(
+    ossie_model: Dict[str, Any],
+    compatibility_level: int = 1567,
+    data_source: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Build a Tabular Model Scripting Language (``model.bim``) document
-    from an Ossie semantic model dict."""
+    from an Ossie semantic model dict.
+
+    ``data_source``, if given, controls what Power Query (M) partition
+    source is generated for every table's partition. Currently supported:
+    ``{"type": "snowflake", "account": ..., "warehouse": ..., "role": ...}``
+    (``role`` optional) -- produces real ``Snowflake.Databases(...)`` M
+    code. When omitted, a generic ``Sql.Database`` placeholder is used
+    instead (meant to be hand-edited before deploying).
+    """
     sm = ossie_model["semantic_model"][0]
     dataset_names = [d["name"] for d in sm.get("datasets", [])]
 
@@ -239,7 +300,12 @@ def build_tmsl_model(ossie_model: Dict[str, Any], compatibility_level: int = 156
                 {
                     "name": f"{table_name}-partition",
                     "mode": "import",
-                    "source": {"type": "m", "expression": build_m_expression(table_name, dataset.get("source", table_name))},
+                    "source": {
+                        "type": "m",
+                        "expression": _build_partition_m_expression(
+                            table_name, dataset.get("source", table_name), data_source
+                        ),
+                    },
                 }
             ],
         }
@@ -353,11 +419,11 @@ def _tmdl_model_content(tmsl: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def build_tmdl_files(ossie_model: Dict[str, Any]) -> Dict[str, str]:
+def build_tmdl_files(ossie_model: Dict[str, Any], data_source: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
     """Returns ``{relative_path: file_text}`` for a TMDL semantic model
     definition (the format behind modern Power BI Projects / Fabric
     git-integrated semantic models)."""
-    tmsl = build_tmsl_model(ossie_model)
+    tmsl = build_tmsl_model(ossie_model, data_source=data_source)
     files = {"definition/model.tmdl": _tmdl_model_content(tmsl)}
     for t in tmsl["model"]["tables"]:
         files[f"definition/tables/{t['name']}.tmdl"] = _tmdl_table_content(t)
@@ -370,7 +436,9 @@ def _safe_project_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9 _-]", "_", name).strip() or "semantic_model"
 
 
-def build_semantic_model_project_files(ossie_model: Dict[str, Any], project_name: str) -> Dict[str, bytes]:
+def build_semantic_model_project_files(
+    ossie_model: Dict[str, Any], project_name: str, data_source: Optional[Dict[str, Any]] = None
+) -> Dict[str, bytes]:
     """The full file set for a Fabric/Power BI ``<name>.SemanticModel``
     folder: ``.platform`` + ``definition.pbism`` + TMDL ``definition/``
     files, plus the raw ``model.bim`` (TMSL) for tools that prefer JSON.
@@ -390,10 +458,10 @@ def build_semantic_model_project_files(ossie_model: Dict[str, Any], project_name
     files[f"{root}/.platform"] = json.dumps(platform_doc, indent=2).encode("utf-8")
     files[f"{root}/definition.pbism"] = json.dumps({"version": "4.2", "settings": {}}, indent=2).encode("utf-8")
 
-    for rel_path, content in build_tmdl_files(ossie_model).items():
+    for rel_path, content in build_tmdl_files(ossie_model, data_source=data_source).items():
         files[f"{root}/{rel_path}"] = content.encode("utf-8")
 
-    tmsl = build_tmsl_model(ossie_model)
+    tmsl = build_tmsl_model(ossie_model, data_source=data_source)
     files[f"{root}/model.bim"] = tmsl_to_json_str(tmsl).encode("utf-8")
 
     readme = (
@@ -413,8 +481,10 @@ def build_semantic_model_project_files(ossie_model: Dict[str, Any], project_name
     return files
 
 
-def build_pbip_zip_bytes(ossie_model: Dict[str, Any], project_name: str) -> bytes:
-    files = build_semantic_model_project_files(ossie_model, project_name)
+def build_pbip_zip_bytes(
+    ossie_model: Dict[str, Any], project_name: str, data_source: Optional[Dict[str, Any]] = None
+) -> bytes:
+    files = build_semantic_model_project_files(ossie_model, project_name, data_source=data_source)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for path, content in files.items():
@@ -430,13 +500,15 @@ class PowerBiExport:
     zip_bytes: bytes
 
 
-def convert_to_powerbi(ossie_model: Dict[str, Any], project_name: str) -> PowerBiExport:
-    tmsl = build_tmsl_model(ossie_model)
+def convert_to_powerbi(
+    ossie_model: Dict[str, Any], project_name: str, data_source: Optional[Dict[str, Any]] = None
+) -> PowerBiExport:
+    tmsl = build_tmsl_model(ossie_model, data_source=data_source)
     return PowerBiExport(
         tmsl=tmsl,
         tmsl_json=tmsl_to_json_str(tmsl),
-        tmdl_files=build_tmdl_files(ossie_model),
-        zip_bytes=build_pbip_zip_bytes(ossie_model, project_name),
+        tmdl_files=build_tmdl_files(ossie_model, data_source=data_source),
+        zip_bytes=build_pbip_zip_bytes(ossie_model, project_name, data_source=data_source),
     )
 
 

@@ -75,6 +75,21 @@ implemented (Tableau appears as a clearly-labeled "not built yet" option):
     expression against them with an in-memory DuckDB engine, just to prove
     the metric logic (and its DAX translation) executes correctly
     end-to-end. These are illustrative values, not real business results.
+  - **Connecting to real Snowflake tables**: check **"Use Snowflake as the
+    data source"** and fill in your Snowflake **Account URL** (e.g.
+    `myorg-myaccount.snowflakecomputing.com`), **Warehouse**, and
+    optionally a **Role**, then convert. This generates real
+    `Snowflake.Databases(...)` Power Query (M) code -- Power BI's native
+    Snowflake connector syntax -- instead of the generic placeholder.
+    Database/schema/table names come from each dataset's Ossie `source`
+    field, i.e. the sidebar's **Source prefix** setting (set it to
+    `YOUR_DATABASE.YOUR_SCHEMA` to match your real Snowflake objects).
+    **No credentials are entered or stored anywhere in the app or the
+    exported files** -- open the downloaded `.SemanticModel` folder as a
+    Power BI Project in Power BI Desktop and hit Refresh; Power BI's
+    Snowflake connector will prompt you for sign-in (username/password,
+    SSO, or key-pair) at that point, exactly as it would for any other
+    Snowflake-backed report.
 
 ## What you upload
 
