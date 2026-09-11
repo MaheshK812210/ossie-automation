@@ -90,6 +90,36 @@ implemented (Tableau appears as a clearly-labeled "not built yet" option):
     Snowflake connector will prompt you for sign-in (username/password,
     SSO, or key-pair) at that point, exactly as it would for any other
     Snowflake-backed report.
+  - **Two ways to get the model into Power BI/Fabric** -- both are kept
+    available side by side:
+    1. **Power BI Desktop** (`⬇️ Download Power BI Project (.zip)`):
+       unzip it and open the `.SemanticModel` folder via *File \u2192 Open
+       \u2192 Power BI Project*. Familiar, works everywhere Desktop runs.
+    2. **Deploy to Fabric** (the `\U0001f6f0\ufe0f Deploy to Fabric` sub-tab,
+       fully headless, no desktop app at all): calls the real
+       [Fabric REST API](https://learn.microsoft.com/en-us/rest/api/fabric/semanticmodel/items/create-semantic-model)
+       (`POST /v1/workspaces/{id}/semanticModels`) to create the semantic
+       model item directly in a Fabric workspace over plain HTTPS. Fill in
+       a **Fabric workspace ID (GUID)** and a **bearer token** (get one
+       from any terminal with `az login` then
+       `az account get-access-token --resource https://api.fabric.microsoft.com --query accessToken -o tsv`
+       -- no credentials are stored by the app, only used for that one
+       request) and click **Deploy**. The app handles the API's
+       long-running-operation/polling pattern and reports success or a
+       real, readable error.
+       - **Requires a Fabric-enabled workspace** (Fabric trial capacity,
+         Premium, or Premium Per User -- plain free/Pro workspaces don't
+         support this API; that's a Microsoft licensing restriction, not
+         something this app can route around). If your organization
+         doesn't have one: check whether a 60-day Fabric trial is
+         available (Power BI/Fabric admin portal -- only works on
+         established tenants, not brand-new ones), or spin up a
+         pay-as-you-go F2 capacity in Azure (~$0.35/hour, pausable) purely
+         for deployment.
+       - **No Fabric workspace or token handy?** Commit the downloaded
+         `.SemanticModel` folder to a git repo connected to a Fabric
+         workspace's **git integration** instead -- `git push` alone syncs
+         it, with no API call and no desktop app either.
 
 ## What you upload
 
@@ -208,11 +238,13 @@ every time it changes, and the app reports any validation errors inline.
 app.py                            Streamlit UI (Stage 1 -> Stage 2 -> Stage 3 workflow)
 ossie_builder.py                  Ossie parsing + YAML generation/merge logic (framework-free, unit-tested)
 powerbi_export.py                 Ossie -> Power BI (TMSL/TMDL) conversion + synthetic-data metric preview
+fabric_deploy.py                  Headless Fabric REST API deployment (no Power BI Desktop required)
 schema/ossie-schema.json           Official Apache Ossie JSON Schema (bundled for validation)
 sample_data/                       Example input files (Account/Position data model)
 scripts/generate_sample_data.py    Regenerates the sample_data/ files
 tests/test_ossie_builder.py        Pytest suite: base generation + AI-context enrichment merge behavior
 tests/test_powerbi_export.py       Pytest suite: SQL->DAX translation, TMSL/TMDL output, metric preview
+tests/test_fabric_deploy.py        Pytest suite: Fabric API payload construction + mocked deploy/poll flows
 .streamlit/config.toml             Dev server port/config + color theme
 ```
 

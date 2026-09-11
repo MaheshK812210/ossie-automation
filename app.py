@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Tuple
 import streamlit as st
 import yaml
 
+import fabric_deploy as fd
 import ossie_builder as ob
 import powerbi_export as pbe
 
@@ -391,6 +392,7 @@ st.session_state.setdefault("left_pane_collapsed", False)
 st.session_state.setdefault("yaml_panel_tall", False)
 st.session_state.setdefault("pbi_export", None)
 st.session_state.setdefault("pbi_metric_preview", None)
+st.session_state.setdefault("fabric_deploy_result", None)
 
 # A widget's session_state value can only be set BEFORE that widget is
 # instantiated in a given script run. Stage 2 computes its result after the
@@ -465,6 +467,7 @@ with st.sidebar:
         st.session_state.use_sample_ai_context = False
         st.session_state.pbi_export = None
         st.session_state.pbi_metric_preview = None
+        st.session_state.fabric_deploy_result = None
         st.rerun()
 
 def _render_stage_1_and_2():
@@ -777,7 +780,14 @@ def _render_stage_1_and_2():
                         "real, ready-to-connect Snowflake M code instead."
                     )
 
-                pbi_view_tabs = st.tabs(["model.bim (TMSL)", "TMDL files", "\u25b6\ufe0f Preview metrics (DAX)"])
+                pbi_view_tabs = st.tabs(
+                    [
+                        "model.bim (TMSL)",
+                        "TMDL files",
+                        "\u25b6\ufe0f Preview metrics (DAX)",
+                        "\U0001f6f0\ufe0f Deploy to Fabric",
+                    ]
+                )
                 with pbi_view_tabs[0]:
                     st.code(export.tmsl_json, language="json", line_numbers=True)
                 with pbi_view_tabs[1]:
@@ -816,6 +826,83 @@ def _render_stage_1_and_2():
                         st.dataframe(rows, use_container_width=True, hide_index=True)
                     elif preview == []:
                         st.caption("No metrics are defined in this model yet.")
+
+                with pbi_view_tabs[3]:
+                    st.markdown(
+                        "Push this semantic model straight into a **Microsoft Fabric workspace** "
+                        "over HTTPS \u2014 skipping Power BI Desktop, SSMS, and Tabular Editor "
+                        "entirely. This calls the real "
+                        "[Fabric REST API](https://learn.microsoft.com/en-us/rest/api/fabric/semanticmodel/items/create-semantic-model) "
+                        "(`POST /v1/workspaces/{id}/semanticModels`)."
+                    )
+                    st.caption(
+                        "**Requires** (outside this app, on your Microsoft tenant): a "
+                        "**Fabric-enabled workspace** (Fabric trial capacity, Premium, or PPU \u2014 "
+                        "plain Power BI Pro workspaces don't support this API) and a **bearer "
+                        "token** for it. Get a token from any terminal, no desktop app:"
+                    )
+                    st.code(
+                        "az login\n"
+                        "az account get-access-token --resource https://api.fabric.microsoft.com "
+                        "--query accessToken -o tsv",
+                        language="bash",
+                    )
+                    st.caption(
+                        "The token is used only for this one request and is never written to "
+                        "disk or logged. Tokens expire after about an hour."
+                    )
+
+                    with st.form("fabric_deploy_form"):
+                        fcols = st.columns(2)
+                        with fcols[0]:
+                            fabric_workspace_id = st.text_input(
+                                "Fabric workspace ID (GUID)",
+                                placeholder="e.g. cfafbeb1-8037-4d0c-896e-a46fb27ff229",
+                                key="fabric_workspace_id",
+                            )
+                        with fcols[1]:
+                            fabric_display_name = st.text_input(
+                                "Semantic model name in Fabric",
+                                value=export.display_name,
+                                key="fabric_display_name",
+                            )
+                        fabric_token = st.text_input(
+                            "Bearer token",
+                            type="password",
+                            key="fabric_bearer_token",
+                            help="Pasted here only for this request; not stored or logged.",
+                        )
+                        deploy_clicked = st.form_submit_button(
+                            "\U0001f680 Deploy to Fabric workspace", type="primary"
+                        )
+
+                    if deploy_clicked:
+                        with st.spinner("Deploying to Fabric \u2014 this can take up to a couple of minutes..."):
+                            st.session_state["fabric_deploy_result"] = fd.create_semantic_model(
+                                workspace_id=fabric_workspace_id,
+                                bearer_token=fabric_token,
+                                display_name=fabric_display_name.strip() or export.display_name,
+                                tmdl_files=export.tmdl_files,
+                                pbism_bytes=export.pbism_bytes,
+                                platform_bytes=export.platform_bytes,
+                                description="Generated by the Ossie Semantic Model Builder from an Apache Ossie YAML.",
+                            )
+
+                    deploy_result = st.session_state.get("fabric_deploy_result")
+                    if deploy_result is not None:
+                        if deploy_result.success:
+                            st.success(f"\u2705 {deploy_result.message}")
+                            if deploy_result.workspace_url:
+                                st.markdown(f"[Open the workspace \u2192]({deploy_result.workspace_url})")
+                        else:
+                            st.error(f"\u274c {deploy_result.message}")
+
+                    st.caption(
+                        "No Fabric workspace handy, or don't want to hand over a token? Commit the "
+                        "downloaded `.SemanticModel` folder to a git repo connected to a Fabric "
+                        "workspace's **git integration** instead \u2014 `git push` alone syncs it, "
+                        "with no API call and no desktop app either."
+                    )
 
         with bi_tabs[1]:
             st.info(

@@ -436,6 +436,23 @@ def _safe_project_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9 _-]", "_", name).strip() or "semantic_model"
 
 
+def build_pbism_bytes() -> bytes:
+    """The minimal ``definition.pbism`` part required by every Power BI /
+    Fabric semantic model definition (TMDL or TMSL)."""
+    return json.dumps({"version": "4.2", "settings": {}}, indent=2).encode("utf-8")
+
+
+def build_platform_bytes(display_name: str) -> bytes:
+    """The ``.platform`` part Fabric uses for git integration / item
+    metadata (display name, item type, a fresh logical id)."""
+    platform_doc = {
+        "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+        "metadata": {"type": "SemanticModel", "displayName": display_name},
+        "config": {"version": "2.0", "logicalId": str(uuid.uuid4())},
+    }
+    return json.dumps(platform_doc, indent=2).encode("utf-8")
+
+
 def build_semantic_model_project_files(
     ossie_model: Dict[str, Any], project_name: str, data_source: Optional[Dict[str, Any]] = None
 ) -> Dict[str, bytes]:
@@ -448,15 +465,10 @@ def build_semantic_model_project_files(
     """
     safe_name = _safe_project_name(project_name)
     root = f"{safe_name}.SemanticModel"
-    files: Dict[str, bytes] = {}
-
-    platform_doc = {
-        "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
-        "metadata": {"type": "SemanticModel", "displayName": safe_name},
-        "config": {"version": "2.0", "logicalId": str(uuid.uuid4())},
+    files: Dict[str, bytes] = {
+        f"{root}/.platform": build_platform_bytes(safe_name),
+        f"{root}/definition.pbism": build_pbism_bytes(),
     }
-    files[f"{root}/.platform"] = json.dumps(platform_doc, indent=2).encode("utf-8")
-    files[f"{root}/definition.pbism"] = json.dumps({"version": "4.2", "settings": {}}, indent=2).encode("utf-8")
 
     for rel_path, content in build_tmdl_files(ossie_model, data_source=data_source).items():
         files[f"{root}/{rel_path}"] = content.encode("utf-8")
@@ -498,17 +510,24 @@ class PowerBiExport:
     tmsl_json: str
     tmdl_files: Dict[str, str]
     zip_bytes: bytes
+    pbism_bytes: bytes
+    platform_bytes: bytes
+    display_name: str
 
 
 def convert_to_powerbi(
     ossie_model: Dict[str, Any], project_name: str, data_source: Optional[Dict[str, Any]] = None
 ) -> PowerBiExport:
     tmsl = build_tmsl_model(ossie_model, data_source=data_source)
+    safe_name = _safe_project_name(project_name)
     return PowerBiExport(
         tmsl=tmsl,
         tmsl_json=tmsl_to_json_str(tmsl),
         tmdl_files=build_tmdl_files(ossie_model, data_source=data_source),
         zip_bytes=build_pbip_zip_bytes(ossie_model, project_name, data_source=data_source),
+        pbism_bytes=build_pbism_bytes(),
+        platform_bytes=build_platform_bytes(safe_name),
+        display_name=safe_name,
     )
 
 
