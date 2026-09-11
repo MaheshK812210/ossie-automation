@@ -272,3 +272,12 @@ pytest
   single-column), and the placeholder Power Query (M) source expressions
   need to be pointed at a real data source before deploying for actual use.
   Review the generated `model.bim`/TMDL before deploying to production.
+- The "Tables & columns" tree (Stage 1, step 2) is a real folder/checkbox
+  tree (via [`streamlit-tree-select`](https://pypi.org/project/streamlit-tree-select/)):
+  tables are folders, columns are leaves, and a table's checkbox shows a
+  tri-state (checked/unchecked/indeterminate) reflecting its columns.
+  Tables are collapsed by default to keep the list compact; use its
+  "Expand all" control to review everything at once. This component
+  renders in an iframe, which browsers don't let CSS reliably scroll
+  independently of the page -- expanding many tables at once makes the
+  whole page taller/scrollable rather than showing its own scrollbar.

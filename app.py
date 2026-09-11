@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Tuple
 
 import streamlit as st
 import yaml
+from streamlit_tree_select import tree_select
 
 import fabric_deploy as fd
 import ossie_builder as ob
@@ -194,43 +195,76 @@ def _filter_tables(
 # Tree-style preview & selection widgets
 # ---------------------------------------------------------------------------
 
+_TREE_LEAF_SEP = "::"
+
+
+def _leaf_value(table_name: str, column_name: str) -> str:
+    return f"{table_name}{_TREE_LEAF_SEP}{column_name}"
+
+
+def _build_metadata_tree_nodes(tables: Dict[str, "ob.TableMeta"]) -> List[Dict[str, Any]]:
+    nodes = []
+    for table_name, table in tables.items():
+        children = []
+        for c in table.columns:
+            dt = ob.map_technical_datatype(c.technical_data_type)
+            badges = []
+            if c.is_primary_key:
+                badges.append("\U0001f511")  # key
+            if c.contains_pii:
+                badges.append("\U0001f512")  # lock
+            badge_str = (" " + " ".join(badges)) if badges else ""
+            label = f"\U0001f4c4 {c.column_name}  \u00b7  {dt}{badge_str}"
+            children.append({"value": _leaf_value(table_name, c.column_name), "label": label})
+        table_label = (
+            f"\U0001f4c1 {table_name}  \u2014  {table.asset_type or 'Table'}  "
+            f"({len(table.columns)} columns)"
+        )
+        nodes.append({"value": table_name, "label": table_label, "children": children})
+    return nodes
+
+
 def _render_metadata_tree(tables: Dict[str, "ob.TableMeta"]) -> Dict[Tuple[str, str], bool]:
+    """A real folder/checkbox tree (react-checkbox-tree via
+    streamlit-tree-select): tables are folders, columns are leaves, and
+    parent checkboxes show a tri-state (checked / unchecked / indeterminate)
+    reflecting how many of their columns are currently selected -- clicking
+    a table's own checkbox toggles every column underneath it at once.
+    """
+    nodes = _build_metadata_tree_nodes(tables)
+    all_leaf_values = [_leaf_value(t, c.column_name) for t, tbl in tables.items() for c in tbl.columns]
+    valid_leaf_set = set(all_leaf_values)
+    valid_table_set = set(tables.keys())
+
+    tree_key = "metadata_tree"
+    prior = st.session_state.get(tree_key)
+    if prior:
+        prior_checked = [v for v in prior.get("checked", []) if v in valid_leaf_set]
+        default_checked = prior_checked if prior_checked else all_leaf_values
+        default_expanded = [v for v in prior.get("expanded", []) if v in valid_table_set]
+    else:
+        default_checked = all_leaf_values
+        default_expanded = []
+
+    st.caption(
+        "Tables are folders, columns are leaves. Uncheck a column to exclude it, or uncheck a "
+        "whole table's checkbox to exclude it entirely. Tables collapse by default to keep this "
+        "compact -- use **Expand all** below to review everything at once."
+    )
+    result = tree_select(
+        nodes,
+        check_model="leaf",
+        checked=default_checked,
+        expanded=default_expanded,
+        show_expand_all=True,
+        key=tree_key,
+    )
+    checked_set = set(result.get("checked", default_checked))
+
     selection: Dict[Tuple[str, str], bool] = {}
     for table_name, table in tables.items():
-        header = f"{_asset_icon(table.asset_type)} **{table_name}**  ·  {table.asset_type or 'Table'}  ·  {len(table.columns)} columns"
-        with st.expander(header, expanded=False):
-            bcol1, bcol2, _sp = st.columns([1, 1, 3])
-            with bcol1:
-                if st.button("Select all", key=f"selall__{table_name}", use_container_width=True):
-                    for c in table.columns:
-                        st.session_state[f"colsel__{table_name}__{c.column_name}"] = True
-            with bcol2:
-                if st.button("Select none", key=f"selnone__{table_name}", use_container_width=True):
-                    for c in table.columns:
-                        st.session_state[f"colsel__{table_name}__{c.column_name}"] = False
-            st.markdown("---")
-            for c in table.columns:
-                key = f"colsel__{table_name}__{c.column_name}"
-                row = st.columns([0.4, 2.6, 1.4, 4.6])
-                with row[0]:
-                    checked = st.checkbox(
-                        "sel", key=key, value=True, label_visibility="collapsed"
-                    )
-                with row[1]:
-                    badges = []
-                    if c.is_primary_key:
-                        badges.append(":orange-badge[🔑 PK]")
-                    if c.contains_pii:
-                        badges.append(":red-badge[🔒 PII]")
-                    if not c.is_nullable:
-                        badges.append(":gray-badge[NOT NULL]")
-                    st.markdown(f"`{c.column_name}`  " + " ".join(badges))
-                with row[2]:
-                    dt = ob.map_technical_datatype(c.technical_data_type)
-                    st.badge(dt, color=DATATYPE_COLORS.get(dt, "gray"))
-                with row[3]:
-                    st.caption(c.description or c.technical_data_type or "\u00a0")
-                selection[(table_name, c.column_name)] = checked
+        for c in table.columns:
+            selection[(table_name, c.column_name)] = _leaf_value(table_name, c.column_name) in checked_set
     return selection
 
 
@@ -459,7 +493,7 @@ with st.sidebar:
     st.divider()
     if st.button("🗑️ Start over (clear everything)", use_container_width=True):
         for k in list(st.session_state.keys()):
-            if k.startswith(("colsel__", "metricsel__", "selall__", "selnone__")):
+            if k.startswith(("metricsel__", "selall__", "selnone__")) or k == "metadata_tree":
                 del st.session_state[k]
         st.session_state.model = None
         st.session_state.yaml_editor = ""
