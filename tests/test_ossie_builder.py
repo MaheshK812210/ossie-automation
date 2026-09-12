@@ -33,8 +33,6 @@ def _build_base_model(**overrides):
     kwargs = dict(
         model_name="account_position_model",
         model_description="Account and position semantic model",
-        dialect="ANSI_SQL",
-        source_prefix="wealth.public",
         tables=tables,
         relationships=relationships,
         metrics=enrichment.metrics,
@@ -77,6 +75,21 @@ def test_to_bool():
     assert ob.to_bool(None, default=True) is True
 
 
+@pytest.mark.parametrize(
+    "raw,expected_short,expected_source",
+    [
+        ("FACT_POSITION", "FACT_POSITION", "FACT_POSITION"),
+        ("PUBLIC.FACT_POSITION", "FACT_POSITION", "PUBLIC.FACT_POSITION"),
+        ("WEALTH_DB.PUBLIC.FACT_POSITION", "FACT_POSITION", "WEALTH_DB.PUBLIC.FACT_POSITION"),
+        ("  WEALTH_DB.PUBLIC.FACT_POSITION  ", "FACT_POSITION", "WEALTH_DB.PUBLIC.FACT_POSITION"),
+    ],
+)
+def test_parse_qualified_table_name(raw, expected_short, expected_source):
+    short, source = ob.parse_qualified_table_name(raw)
+    assert short == expected_short
+    assert source == expected_source
+
+
 def test_parse_metadata_groups_columns_by_table():
     df = _load_sample("01_table_column_metadata.csv")
     tables = ob.parse_metadata(df)
@@ -84,6 +97,9 @@ def test_parse_metadata_groups_columns_by_table():
     assert "DIM_ACCOUNT" in tables
     fact = tables["FACT_POSITION"]
     assert fact.asset_type == "Fact Table"
+    # The "database.schema" is inferred entirely from the qualified Name
+    # column -- there's no separate source-prefix setting anywhere else.
+    assert fact.source == "WEALTH_DB.PUBLIC.FACT_POSITION"
     pk_cols = [c.column_name for c in fact.columns if c.is_primary_key]
     assert pk_cols == ["ACCOUNT_ID", "SECURITY_ID", "AS_OF_DATE_ID"]
 
@@ -96,6 +112,8 @@ def test_parse_metrics_synonyms_extensions():
     metric_names = {m["name"] for m in result.metrics}
     assert "total_market_value" in metric_names
     assert len(result.metrics) == 5
+    # Dialect is per-metric (there's no global dialect setting).
+    assert all(m["dialect"] == "ANSI_SQL" for m in result.metrics)
 
     assert result.field_synonyms[("FACT_POSITION", "MARKET_VALUE")] == [
         "position value",
@@ -133,6 +151,34 @@ def test_parse_metrics_synonyms_extensions_empty():
     assert result.warnings == []
 
 
+def test_metric_dialect_defaults_to_ansi_sql_when_blank():
+    df = pd.DataFrame(
+        [{"Type": "Metric", "Metric Name": "m1", "Metric Expression": "SUM(x.y)", "Dialect": ""}]
+    )
+    result = ob.parse_metrics_synonyms_extensions(df)
+    assert result.warnings == []
+    assert result.metrics[0]["dialect"] == "ANSI_SQL"
+
+
+def test_metric_dialect_respects_valid_value():
+    df = pd.DataFrame(
+        [{"Type": "Metric", "Metric Name": "m1", "Metric Expression": "SUM(x.y)", "Dialect": "snowflake"}]
+    )
+    result = ob.parse_metrics_synonyms_extensions(df)
+    assert result.warnings == []
+    assert result.metrics[0]["dialect"] == "SNOWFLAKE"
+
+
+def test_metric_dialect_warns_and_falls_back_on_unknown_value():
+    df = pd.DataFrame(
+        [{"Type": "Metric", "Metric Name": "m1", "Metric Expression": "SUM(x.y)", "Dialect": "NOT_A_DIALECT"}]
+    )
+    result = ob.parse_metrics_synonyms_extensions(df)
+    assert len(result.warnings) == 1
+    assert "NOT_A_DIALECT" in result.warnings[0]
+    assert result.metrics[0]["dialect"] == "ANSI_SQL"
+
+
 def test_parse_relationships():
     df = _load_sample("03_relationships.csv")
     rels = ob.parse_relationships(df)
@@ -166,6 +212,14 @@ def test_full_base_pipeline_produces_schema_valid_yaml():
     # Composite primary key survives round trip.
     assert ds_by_name["FACT_POSITION"]["primary_key"] == ["ACCOUNT_ID", "SECURITY_ID", "AS_OF_DATE_ID"]
     assert ds_by_name["DIM_CLIENT"]["primary_key"] == ["CLIENT_ID"]
+
+    # source is inferred from the metadata file's qualified Name column,
+    # not from any separate source-prefix setting.
+    assert ds_by_name["FACT_POSITION"]["source"] == "WEALTH_DB.PUBLIC.FACT_POSITION"
+
+    # Metrics carry their own per-row dialect.
+    total_mv = next(m for m in result.model["semantic_model"][0]["metrics"] if m["name"] == "total_market_value")
+    assert total_mv["expression"]["dialects"][0]["dialect"] == "ANSI_SQL"
 
     # Field-level synonyms from File 2 land as ai_context on the field.
     mv_field = next(f for f in ds_by_name["FACT_POSITION"]["fields"] if f["name"] == "MARKET_VALUE")
@@ -270,8 +324,6 @@ def test_unknown_table_in_relationship_generates_warning():
     result = ob.build_semantic_model(
         model_name="m",
         model_description="",
-        dialect="ANSI_SQL",
-        source_prefix="",
         tables=tables,
         relationships=relationships,
     )

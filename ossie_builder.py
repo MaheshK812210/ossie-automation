@@ -128,6 +128,8 @@ _ENRICHMENT_ALIASES = {
     "metric_description": "metric_description",
     "metric_data_type": "metric_datatype",
     "metric_datatype": "metric_datatype",
+    "dialect": "metric_dialect",
+    "metric_dialect": "metric_dialect",
     "synonyms": "synonyms",
     "custom_extension_vendor": "custom_extension_vendor",
     "custom_extension_data": "custom_extension_data",
@@ -314,12 +316,31 @@ class ColumnMeta:
 class TableMeta:
     table_name: str
     asset_type: str = ""
+    source: str = ""
     columns: List[ColumnMeta] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
 # Parsing: metadata file (File 1, required)
 # ---------------------------------------------------------------------------
+
+def parse_qualified_table_name(raw: str) -> Tuple[str, str]:
+    """Splits the metadata file's ``Name`` column into ``(short_table_name,
+    source)``. There's no separate "database.schema" setting anywhere else
+    in the app -- the source is inferred entirely from this one column.
+
+    - ``"FACT_POSITION"`` -> short name ``FACT_POSITION``, source
+      ``FACT_POSITION`` (no qualification given).
+    - ``"WEALTH_DB.PUBLIC.FACT_POSITION"`` -> short name ``FACT_POSITION``
+      (used as the Ossie dataset name and in relationship/metric
+      references), source ``WEALTH_DB.PUBLIC.FACT_POSITION`` (used
+      verbatim as the dataset's ``source`` field).
+    """
+    raw = raw.strip()
+    if "." in raw:
+        return raw.rsplit(".", 1)[-1], raw
+    return raw, raw
+
 
 def parse_metadata(df: pd.DataFrame) -> "Dict[str, TableMeta]":
     norm = normalize_columns(df, _METADATA_ALIASES)
@@ -331,11 +352,14 @@ def parse_metadata(df: pd.DataFrame) -> "Dict[str, TableMeta]":
 
     tables: "Dict[str, TableMeta]" = {}
     for _, row in norm.iterrows():
-        table_name = clean_str(row.get("table_name"))
+        raw_name = clean_str(row.get("table_name"))
         column_name = clean_str(row.get("column_name"))
-        if not table_name or not column_name:
+        if not raw_name or not column_name:
             continue
-        table = tables.setdefault(table_name, TableMeta(table_name=table_name))
+        table_name, source = parse_qualified_table_name(raw_name)
+        table = tables.setdefault(table_name, TableMeta(table_name=table_name, source=source))
+        if not table.source:
+            table.source = source
         asset_type = clean_str(row.get("asset_type"))
         if asset_type and not table.asset_type:
             table.asset_type = asset_type
@@ -432,12 +456,20 @@ def parse_metrics_synonyms_extensions(df: Optional[pd.DataFrame]) -> EnrichmentR
                     f"'Metric Expression' -- skipped."
                 )
                 continue
+            dialect = clean_str(row.get("metric_dialect")).upper() or "ANSI_SQL"
+            if dialect not in VALID_DIALECTS:
+                result.warnings.append(
+                    f"Row {line_no}: unknown Dialect '{dialect}' for metric "
+                    f"'{name}' -- falling back to ANSI_SQL."
+                )
+                dialect = "ANSI_SQL"
             result.metrics.append(
                 {
                     "name": name,
                     "expression": expr,
                     "description": clean_str(row.get("metric_description")),
                     "datatype": clean_str(row.get("metric_datatype")),
+                    "dialect": dialect,
                 }
             )
         elif row_type in ("SYNONYM", "FIELD_SYNONYM"):
@@ -577,6 +609,13 @@ def parse_ai_context(
 # YAML construction helpers -- base generation
 # ---------------------------------------------------------------------------
 
+# Simple column-reference field expressions are dialect-agnostic (just the
+# bare column name), so fields always use ANSI_SQL. Only metrics (whose
+# expressions can contain dialect-specific aggregate SQL) carry their own
+# per-row dialect, set via the "Dialect" column in the metrics file.
+FIELD_DIALECT = "ANSI_SQL"
+
+
 def make_expression(expression: str, dialect: str = "ANSI_SQL") -> Dict[str, Any]:
     return {"dialects": [{"dialect": dialect, "expression": expression}]}
 
@@ -587,14 +626,13 @@ def make_custom_extension(vendor_name: str, data: Dict[str, Any]) -> Dict[str, A
 
 def build_field(
     col: ColumnMeta,
-    dialect: str,
     *,
     extra_synonyms: Optional[List[str]] = None,
     extra_custom_extensions: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     field_dict: Dict[str, Any] = {
         "name": col.column_name,
-        "expression": make_expression(col.column_name, dialect),
+        "expression": make_expression(col.column_name, FIELD_DIALECT),
     }
     datatype = map_technical_datatype(col.technical_data_type)
     if datatype != "Opaque" or col.technical_data_type:
@@ -628,13 +666,11 @@ def build_field(
 def build_dataset(
     table: TableMeta,
     *,
-    dialect: str,
-    source_prefix: str,
     field_synonyms: Dict[Tuple[str, str], List[str]],
     field_extensions: Dict[Tuple[str, str], List[Dict[str, Any]]],
     dataset_extensions: Dict[str, List[Dict[str, Any]]],
 ) -> Dict[str, Any]:
-    source = f"{source_prefix}.{table.table_name}" if source_prefix else table.table_name
+    source = table.source or table.table_name
 
     primary_key = [c.column_name for c in table.columns if c.is_primary_key]
 
@@ -644,7 +680,6 @@ def build_dataset(
         fields.append(
             build_field(
                 col,
-                dialect,
                 extra_synonyms=field_synonyms.get(key),
                 extra_custom_extensions=field_extensions.get(key),
             )
@@ -673,7 +708,7 @@ def build_dataset(
     return dataset
 
 
-def build_relationship(rel: Dict[str, Any], dialect: str) -> Dict[str, Any]:
+def build_relationship(rel: Dict[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = {
         "name": rel["name"],
         "from": rel["from_table"],
@@ -695,7 +730,8 @@ def build_relationship(rel: Dict[str, Any], dialect: str) -> Dict[str, Any]:
     return out
 
 
-def build_metric(metric: Dict[str, str], dialect: str) -> Dict[str, Any]:
+def build_metric(metric: Dict[str, str]) -> Dict[str, Any]:
+    dialect = metric.get("dialect") or "ANSI_SQL"
     out: Dict[str, Any] = {
         "name": metric["name"],
         "expression": make_expression(metric["expression"], dialect),
@@ -718,8 +754,6 @@ def build_semantic_model(
     *,
     model_name: str,
     model_description: str,
-    dialect: str,
-    source_prefix: str,
     tables: Dict[str, TableMeta],
     relationships: List[Dict[str, Any]],
     metrics: Optional[List[Dict[str, str]]] = None,
@@ -731,6 +765,12 @@ def build_semantic_model(
     optional metrics, field synonyms, custom_extensions placeholders, and
     relationships. AI-context enrichment is intentionally NOT handled here
     -- see ``merge_ai_context_into_model`` for the later enrichment step.
+
+    There is no global dialect or source-prefix setting: each dataset's
+    ``source`` comes from the metadata file's ``Name`` column (see
+    ``parse_qualified_table_name``), and each metric carries its own
+    dialect from the metrics file's ``Dialect`` column (defaulting to
+    ANSI_SQL). Field expressions are always ANSI_SQL (see ``FIELD_DIALECT``).
     """
     metrics = metrics or []
     field_synonyms = field_synonyms or {}
@@ -745,8 +785,6 @@ def build_semantic_model(
     for table_name, table in tables.items():
         dataset = build_dataset(
             table,
-            dialect=dialect,
-            source_prefix=source_prefix,
             field_synonyms=field_synonyms,
             field_extensions=field_extensions,
             dataset_extensions=dataset_extensions,
@@ -768,7 +806,7 @@ def build_semantic_model(
                 f"'{rel['to_table']}' (to) -- skipped."
             )
             continue
-        rel_out.append(build_relationship(rel, dialect))
+        rel_out.append(build_relationship(rel))
 
     semantic_model_entry: Dict[str, Any] = {"name": model_name}
     if model_description:
@@ -780,7 +818,7 @@ def build_semantic_model(
     metrics_out = []
     for m in metrics:
         try:
-            metrics_out.append(build_metric(m, dialect))
+            metrics_out.append(build_metric(m))
         except KeyError as exc:  # pragma: no cover -- defensive
             warnings.append(f"Skipping malformed metric entry: missing {exc}.")
     if metrics_out:

@@ -35,8 +35,6 @@ def account_position_model():
     result = ob.build_semantic_model(
         model_name="account_position_model",
         model_description="Account and position semantic model",
-        dialect="ANSI_SQL",
-        source_prefix="wealth.public",
         tables=tables,
         relationships=relationships,
         metrics=enrichment.metrics,

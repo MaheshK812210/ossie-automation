@@ -18,11 +18,29 @@ streamlit run app.py
 
 The app starts on `http://localhost:47531` (configured in
 `.streamlit/config.toml`). Click **Load sample data** in the sidebar to try
-Stage 1 immediately with a bundled example data model -- no files required.
+it immediately with a bundled example data model -- no files required.
 
-## The two-stage workflow
+## Layout: three panes
 
-### Stage 1 -- generate the base YAML
+- **Left pane**: model name/description, and a **section** selector
+  (radio list): **Base Model**, **Enrich Base Model**, **BI Conversions**,
+  **AI Agent Invocation** (placeholder).
+- **Center pane**: renders whichever section is currently selected.
+- **Right pane ("Ossie")**: a persistent, always-visible YAML view/edit
+  panel shared by every section -- whatever the Base Model section
+  generates, or the Enrich section enriches, shows up here immediately.
+  Click **Full screen »** to expand it to (almost) the full page width;
+  **« Exit full screen** restores the 3-pane view. Nothing is lost when
+  toggling or switching sections -- the current model and YAML text
+  persist throughout.
+
+There is **no separate "database.schema" or "dialect" setting** anywhere
+in the UI: each dataset's `source` is inferred entirely from the metadata
+file's `Name` column (optionally qualified, e.g.
+`WEALTH_DB.PUBLIC.FACT_POSITION`), and each metric's SQL dialect comes from
+its own `Dialect` column in the metrics file (defaulting to `ANSI_SQL`).
+
+### Base Model -- generate the base YAML
 
 Upload up to three files (only the first is required):
 
@@ -32,12 +50,13 @@ Upload up to three files (only the first is required):
 
 Click **Generate base YAML**. The app parses the files, builds an
 Ossie-compliant semantic model, validates it against the official
-[`ossie-schema.json`](schema/ossie-schema.json), and shows it to you in an
-**editable text area** right in the browser -- make any manual tweaks you
-want, click **Apply edits**, and it re-validates and locks in your changes.
-You can download the YAML at this point, or continue to Stage 2.
+[`ossie-schema.json`](schema/ossie-schema.json), and shows it in the
+**Ossie** panel on the right in an **editable text area** -- make any
+manual tweaks you want, click **Apply edits**, and it re-validates and
+locks in your changes. Download the YAML at this point, or continue to
+the Enrich section.
 
-### Stage 2 -- enrich with AI context (optional, later)
+### Enrich Base Model -- add AI context (optional, later)
 
 Once a base YAML exists, you can upload a separate **AI context** file
 (anytime -- immediately, or much later, in a different session). It never
@@ -48,11 +67,11 @@ has, and **appends** any `Custom Extension` value as a brand-new
 context without clobbering what the base generation (or a previous
 enrichment pass) already produced.
 
-### Stage 3 -- export to a BI tool (optional)
+### BI Conversions -- export to a BI tool (optional)
 
-Once a base YAML exists, an **"Export to a BI tool"** section lets you
-convert it with one click. Two options are shown; only **Power BI** is
-implemented (Tableau appears as a clearly-labeled "not built yet" option):
+Once a base YAML exists, this section lets you convert it with one click.
+Two options are shown; only **Power BI** is implemented (Tableau appears
+as a clearly-labeled "not built yet" option):
 
 - **Power BI**: generates a real **TMSL** (`model.bim`) document and a
   **TMDL**-based Power BI Project folder (the same text-based format behind
@@ -82,11 +101,11 @@ implemented (Tableau appears as a clearly-labeled "not built yet" option):
     `Snowflake.Databases(...)` Power Query (M) code -- Power BI's native
     Snowflake connector syntax -- instead of the generic placeholder.
     Database/schema/table names come from each dataset's Ossie `source`
-    field, i.e. the sidebar's **Source prefix** setting (set it to
-    `YOUR_DATABASE.YOUR_SCHEMA` to match your real Snowflake objects).
-    **No credentials are entered or stored anywhere in the app or the
-    exported files** -- open the downloaded `.SemanticModel` folder as a
-    Power BI Project in Power BI Desktop and hit Refresh; Power BI's
+    field, which is inferred from the metadata file's qualified `Name`
+    column (e.g. `MY_DB.PUBLIC.MY_TABLE` -- see "Table & column metadata"
+    below). **No credentials are entered or stored anywhere in the app or
+    the exported files** -- open the downloaded `.SemanticModel` folder as
+    a Power BI Project in Power BI Desktop and hit Refresh; Power BI's
     Snowflake connector will prompt you for sign-in (username/password,
     SSO, or key-pair) at that point, exactly as it would for any other
     Snowflake-backed report.
@@ -121,6 +140,13 @@ implemented (Tableau appears as a clearly-labeled "not built yet" option):
          workspace's **git integration** instead -- `git push` alone syncs
          it, with no API call and no desktop app either.
 
+### AI Agent Invocation (placeholder)
+
+A placeholder section for a future AI agent integration (e.g. answering
+natural-language questions using the current model's metrics,
+relationships, and `ai_context`). It shows a disabled input/button once a
+base YAML exists; the actual agent invocation code is not implemented yet.
+
 ## What you upload
 
 ### 1. Table & column metadata (required)
@@ -130,7 +156,7 @@ headers (case/spacing-insensitive) are used:
 
 | Header | Meaning |
 |---|---|
-| `Name` | Table or view name |
+| `Name` | Table or view name -- **optionally qualified** with `database.schema.`, e.g. `WEALTH_DB.PUBLIC.FACT_POSITION`. There is no separate database/schema setting anywhere else in the app: the last dot-separated segment becomes the Ossie dataset name (and is what relationships/metrics/synonyms/relationships files reference), while the full string becomes the dataset's `source` field verbatim. A plain unqualified name (e.g. just `FACT_POSITION`) works too -- `source` then equals the table name. |
 | `Assest Type` | e.g. `Fact Table`, `Dimension Table`, `View` |
 | `Column Title` | Column name |
 | `Description` | Business-friendly description |
@@ -156,6 +182,7 @@ One sheet, one row per item, discriminated by a **`Type`** column:
 | `Metric Expression` | Metric | Aggregate SQL expression, e.g. `SUM(FACT_POSITION.MARKET_VALUE)` |
 | `Metric Description` | Metric | What the metric measures |
 | `Metric Data Type` | Metric | `String`/`Integer`/`Decimal`/`Float`/`Boolean`/`Date`/`Time`/`DateTime`/`DateTimeTz`/`Opaque` |
+| `Dialect` | Metric | SQL dialect of `Metric Expression`: one of `ANSI_SQL`, `SNOWFLAKE`, `MDX`, `TABLEAU`, `DATABRICKS`, `MAQL`, `BIGQUERY`, `THOUGHTSPOT`. Optional; defaults to (and falls back on any unrecognized value to) `ANSI_SQL`, with a warning. This is the **only** place a dialect is set anywhere in the app -- it's per-metric, not global. Field expressions are always `ANSI_SQL` (they're just plain column references). |
 | `Synonyms` | Synonym | Comma-separated alternate names for that field |
 | `Custom Extension Vendor` | Custom Extension | Free-form vendor name (defaults to `COMMON`) |
 | `Custom Extension Data` | Custom Extension | A JSON object (used as-is) or free text (wrapped as `{"note": "..."}`) |
@@ -203,7 +230,9 @@ The bundled sample data represents a common wealth-management star schema:
 
 Relationships connect the fact to each dimension, and `DIM_ACCOUNT` to
 `DIM_CLIENT`. This is exactly what loads when you click **Load sample data**
-(Stage 1) and **Use sample AI context file** (Stage 2).
+(sidebar) and **Use sample AI context file** (Enrich Base Model section).
+The sample metadata file qualifies every table as `WEALTH_DB.PUBLIC.<table>`
+to demonstrate the `source`-inference behavior described above.
 
 ## How fields map onto the Ossie spec
 
@@ -214,18 +243,18 @@ standard Ossie `custom_extensions` block instead of being dropped:
 
 | Input | Ossie destination |
 |---|---|
-| `Name` | `datasets[].name` |
+| `Name` | `datasets[].name` (short/last segment) + `datasets[].source` (full qualified string, verbatim) |
 | `Column Title` | `datasets[].fields[].name` |
 | `Description` | `datasets[].fields[].description` |
 | `Technical Data Type` | best-effort mapped to `datasets[].fields[].datatype` enum (`String`, `Integer`, `Decimal`, `Float`, `Boolean`, `Date`, `Time`, `DateTime`, `DateTimeTz`, `Opaque`) **and** kept verbatim in `custom_extensions` |
 | `size`, `Column Position`, `Is nullable`, `Contains PII`, `Description from source system` | `datasets[].fields[].custom_extensions` (`vendor_name: COMMON`) |
 | `Is Primary Key` + `Primary Key` label | `datasets[].primary_key` (grouped into a single composite key per table) |
 | `Assest Type`, PII column roll-up | `datasets[].custom_extensions` (`vendor_name: COMMON`) |
-| File 2 `Metric` rows | native `semantic_model[].metrics[]` |
+| File 2 `Metric` rows (+ their own `Dialect`) | native `semantic_model[].metrics[]`, each with its own `expression.dialects[].dialect` |
 | File 2 `Synonym` rows | `datasets[].fields[].ai_context.synonyms` (base synonyms) |
 | File 2 `Custom Extension` rows | `datasets[].custom_extensions` (table-level) or `datasets[].fields[].custom_extensions` (field-level) |
 | Relationships file | native `semantic_model[].relationships[]` |
-| File 4 AI context (Stage 2) | concatenated into `ai_context` + appended into `custom_extensions` (`vendor_name: AI_ENRICHMENT`) at model / dataset / field level |
+| File 4 AI context (Enrich Base Model) | concatenated into `ai_context` + appended into `custom_extensions` (`vendor_name: AI_ENRICHMENT`) at model / dataset / field level |
 
 The generated YAML is validated against the official Ossie JSON Schema
 (`schema/ossie-schema.json`, fetched from the
@@ -235,7 +264,7 @@ every time it changes, and the app reports any validation errors inline.
 ## Project layout
 
 ```
-app.py                            Streamlit UI (Stage 1 -> Stage 2 -> Stage 3 workflow)
+app.py                            Streamlit UI (3-pane layout: settings/nav, active section, Ossie YAML)
 ossie_builder.py                  Ossie parsing + YAML generation/merge logic (framework-free, unit-tested)
 powerbi_export.py                 Ossie -> Power BI (TMSL/TMDL) conversion + synthetic-data metric preview
 fabric_deploy.py                  Headless Fabric REST API deployment (no Power BI Desktop required)
@@ -272,8 +301,8 @@ pytest
   single-column), and the placeholder Power Query (M) source expressions
   need to be pointed at a real data source before deploying for actual use.
   Review the generated `model.bim`/TMDL before deploying to production.
-- The "Tables & columns" tree (Stage 1, step 2) is a real folder/checkbox
-  tree (via [`streamlit-tree-select`](https://pypi.org/project/streamlit-tree-select/)):
+- The "Tables & columns" tree (Base Model section, step 2) is a real
+  folder/checkbox tree (via [`streamlit-tree-select`](https://pypi.org/project/streamlit-tree-select/)):
   tables are folders, columns are leaves, and a table's checkbox shows a
   tri-state (checked/unchecked/indeterminate) reflecting its columns.
   Tables are collapsed by default to keep the list compact; use its
