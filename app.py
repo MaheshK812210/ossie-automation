@@ -1064,15 +1064,17 @@ with st.sidebar:
 
     st.divider()
     st.header("\U0001f4cb Sections")
-    _section_labels = [label for _, label in SECTIONS]
-    _section_keys = [key for key, _ in SECTIONS]
-    _current_section_key = st.session_state.get("active_section", _section_keys[0])
-    _current_section_idx = _section_keys.index(_current_section_key) if _current_section_key in _section_keys else 0
-    _choice_label = st.radio(
-        "Section", _section_labels, index=_current_section_idx, key="active_section_radio",
-        label_visibility="collapsed",
-    )
-    st.session_state.active_section = _section_keys[_section_labels.index(_choice_label)]
+    _current_section_key = st.session_state.get("active_section", SECTIONS[0][0])
+    for _section_key, _section_label in SECTIONS:
+        _is_active = _current_section_key == _section_key
+        if st.button(
+            _section_label,
+            key=f"section_btn_{_section_key}",
+            use_container_width=True,
+            type="primary" if _is_active else "secondary",
+        ):
+            st.session_state.active_section = _section_key
+            st.rerun()
 
     st.divider()
     st.header("\U0001f9ea Try it with sample data")
