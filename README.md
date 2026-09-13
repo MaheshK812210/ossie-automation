@@ -188,6 +188,43 @@ by default, overridable -- see below) via the GitHub Contents API
 - **Load** shows a dropdown of every model currently saved in that
   section's directory; pick one and click **Load selected model** to pull
   it into the YAML panel (you can then edit and save it back).
+- **Loading updates the sidebar's Model name field too** -- it's set to the
+  loaded model's own `name`, so a subsequent **Save** by default overwrites
+  the same file you just loaded rather than a stale name you'd typed
+  earlier.
+- **Editing after a load is always possible**: you can edit the YAML
+  directly in the panel, or go back to **Base Model** and upload just a
+  new/updated piece -- see "Incremental updates" below -- table metadata
+  isn't required again just to add a metric or a relationship.
+
+### Incremental updates once a model is loaded
+
+Once a model exists in the Ossie panel -- whether freshly generated,
+loaded from the registry, or hand-edited -- the **Base Model** section's
+three uploads (table/column metadata, metrics/synonyms/extensions,
+relationships) all become **optional**, and the button changes from
+**🚀 Generate base YAML** to **🔄 Apply changes to loaded model**. Upload
+just the piece you want to change:
+
+- **Only metrics/synonyms/extensions**: new metrics are added (a metric
+  with the same `name` as an existing one replaces it), field synonyms are
+  added to whatever synonyms a field already has, and custom extensions
+  are appended -- nothing about the existing tables changes.
+- **Only relationships**: new relationships are added the same way
+  (upserted by name); a relationship referencing a table that doesn't
+  exist in the model is skipped with a warning, same as during the
+  original generation.
+- **Only table metadata**: any table name in the file that already exists
+  in the model is fully replaced with the new definition (mirrors
+  re-uploading that table); an unseen table name is added as a new
+  dataset. Existing metrics/relationships/synonyms on tables you didn't
+  re-upload are left untouched.
+- **Any combination** of the three at once works the same way, all applied
+  together.
+
+If nothing is uploaded, the section just shows a summary of what's
+currently loaded (dataset/field/relationship/metric counts) -- you can
+still edit the YAML directly on the right at any time.
 
 ### Configuring the registry token
 

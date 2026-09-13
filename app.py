@@ -635,9 +635,16 @@ def _render_registry_section():
                     st.session_state.registry_message = ("error", f"\u274c Loaded file isn't valid YAML: {e}")
                     st.rerun()
                     return
-                # Can't touch st.session_state.yaml_editor directly here --
-                # that widget was already instantiated earlier in this run.
+                # Can't touch st.session_state.yaml_editor or model_name_input
+                # directly here -- those widgets were already instantiated
+                # earlier in this run. Stash and apply them on the rerun.
                 st.session_state["_pending_model"] = parsed
+                loaded_name = None
+                sm_entries = parsed.get("semantic_model") or []
+                if sm_entries and sm_entries[0].get("name"):
+                    loaded_name = sm_entries[0]["name"]
+                if loaded_name:
+                    st.session_state["_pending_model_name"] = loaded_name
                 st.session_state.registry_message = ("success", f"\u2705 Loaded '{chosen}' from `{registry_dir}/`.")
                 st.rerun()
 
@@ -655,14 +662,28 @@ def _render_base_model_section():
         "`WEALTH_DB.PUBLIC.FACT_POSITION`), and each metric's dialect comes from its own "
         "`Dialect` column in the metrics file."
     )
+
+    model_already_loaded = st.session_state.model is not None
+
     st.subheader("1. Upload your files")
+    if model_already_loaded:
+        st.info(
+            "A model is already loaded (generated earlier, hand-edited, or loaded from the "
+            "**Registry**). Every upload below is now **optional** \u2014 upload just the "
+            "piece(s) you want to add or update (new/changed table metadata, metrics/synonyms/"
+            "extensions, and/or relationships); anything you don't re-upload is left exactly as "
+            "it is. You can also skip uploading entirely and edit the YAML directly in the "
+            "**Ossie** panel on the right.",
+            icon="\u2139\ufe0f",
+        )
     st.caption(
         "Accepted formats: **.csv, .xlsx, .txt** (delimited). Multi-sheet Excel workbooks are combined automatically."
     )
 
+    metadata_req_tag = "optional \u2014 adds/updates tables" if model_already_loaded else "required"
     upload_cols = st.columns(3)
     with upload_cols[0]:
-        st.markdown("**\u2460 Table & column metadata** `required`")
+        st.markdown(f"**\u2460 Table & column metadata** `{metadata_req_tag}`")
         st.caption(
             "One row per column: Name (optionally qualified, e.g. `DB.SCHEMA.TABLE`), Assest "
             "Type, Column Title, Description, Description from source system, size, Technical "
@@ -712,13 +733,24 @@ def _render_base_model_section():
     if load_error:
         st.error(f"Failed to read one of the uploaded files: {load_error}")
         return
-    if metadata_df is None:
+
+    if metadata_df is None and not model_already_loaded:
         st.warning("Upload the table/column metadata file (or load the sample data) to continue.")
+        return
+
+    nothing_new_uploaded = metadata_df is None and enrichment_df is None and relationships_df is None
+    if nothing_new_uploaded and model_already_loaded:
+        n_datasets, n_fields, n_rels, n_metrics = _dataset_field_counts(st.session_state.model)
+        st.caption(
+            f"Current loaded model: **{n_datasets}** datasets, **{n_fields}** fields, "
+            f"**{n_rels}** relationships, **{n_metrics}** metrics. Upload a file above to add "
+            "to it, or edit the YAML directly in the Ossie panel on the right."
+        )
         return
 
     parse_error = None
     try:
-        tables = ob.parse_metadata(metadata_df)
+        tables = ob.parse_metadata(metadata_df) if metadata_df is not None else None
         enrichment = ob.parse_metrics_synonyms_extensions(enrichment_df)
         relationships = ob.parse_relationships(relationships_df)
     except Exception as e:  # noqa: BLE001
@@ -729,50 +761,79 @@ def _render_base_model_section():
         st.error(f"Failed to parse the uploaded files: {parse_error}")
         return
 
-    st.subheader("2. Review & select what to include")
-    st.caption(
-        "Expand each table to uncheck columns you don't want in the YAML. Deselecting every "
-        "column in a table drops that table entirely."
-    )
-    tree_tabs = st.tabs(["\U0001f9f1 Tables & columns", "\U0001f4d0 Metrics", "\U0001f517 Relationships"])
-    with tree_tabs[0]:
-        selected_columns = _render_metadata_tree(tables)
-    with tree_tabs[1]:
-        selected_metrics = _render_metrics_tree(enrichment.metrics)
-    with tree_tabs[2]:
-        _render_relationships_section(relationships, tables)
+    st.subheader("2. Review & select what to include" if tables is not None else "2. Review what will be added")
+    selected_columns: Dict[Tuple[str, str], bool] = {}
+    selected_metrics: Dict[str, bool] = {}
+    if tables is not None:
+        st.caption(
+            "Expand each table to uncheck columns you don't want in the YAML. Deselecting every "
+            "column in a table drops that table entirely."
+        )
+        tree_tabs = st.tabs(["\U0001f9f1 Tables & columns", "\U0001f4d0 Metrics", "\U0001f517 Relationships"])
+        with tree_tabs[0]:
+            selected_columns = _render_metadata_tree(tables)
+        with tree_tabs[1]:
+            selected_metrics = _render_metrics_tree(enrichment.metrics)
+        with tree_tabs[2]:
+            _render_relationships_section(relationships, tables)
+    else:
+        # No new table metadata this round -- just previewing the metrics
+        # and/or relationships that will be merged into the already-loaded
+        # model (existing tables come from that model, not shown again here).
+        tree_tabs = st.tabs(["\U0001f4d0 Metrics", "\U0001f517 Relationships"])
+        with tree_tabs[0]:
+            selected_metrics = _render_metrics_tree(enrichment.metrics)
+        with tree_tabs[1]:
+            _render_relationships_section(relationships, {})
 
     for w in enrichment.warnings:
         st.warning(w)
 
-    st.subheader("3. Generate the base Ossie YAML")
-    generate = st.button("\U0001f680 Generate base YAML", type="primary")
+    button_label = "\U0001f680 Generate base YAML" if not model_already_loaded else "\U0001f504 Apply changes to loaded model"
+    st.subheader("3. Generate the base Ossie YAML" if not model_already_loaded else "3. Apply changes")
+    generate = st.button(button_label, type="primary")
 
     if generate:
         try:
-            filtered_tables, dropped_tables = _filter_tables(tables, selected_columns)
             filtered_metrics = [m for m in enrichment.metrics if selected_metrics.get(m["name"], True)]
 
-            for name in dropped_tables:
-                st.warning(f"Table '{name}' excluded from the YAML \u2014 no columns were selected.")
+            if tables is not None:
+                filtered_tables, dropped_tables = _filter_tables(tables, selected_columns)
+                for name in dropped_tables:
+                    st.warning(f"Table '{name}' excluded from the YAML \u2014 no columns were selected.")
+            else:
+                filtered_tables = None
 
-            result = ob.build_semantic_model(
-                model_name=_current_model_name(),
-                model_description=_current_model_description(),
-                tables=filtered_tables,
-                relationships=relationships,
-                metrics=filtered_metrics,
-                field_synonyms=enrichment.field_synonyms,
-                dataset_extensions=enrichment.dataset_extensions,
-                field_extensions=enrichment.field_extensions,
-            )
+            if model_already_loaded:
+                result = ob.merge_updates_into_model(
+                    st.session_state.model,
+                    new_tables=filtered_tables,
+                    metrics=filtered_metrics,
+                    field_synonyms=enrichment.field_synonyms,
+                    dataset_extensions=enrichment.dataset_extensions,
+                    field_extensions=enrichment.field_extensions,
+                    relationships=relationships,
+                )
+                toast_message = "Changes applied to the loaded model \u2014 see the Ossie panel on the right."
+            else:
+                result = ob.build_semantic_model(
+                    model_name=_current_model_name(),
+                    model_description=_current_model_description(),
+                    tables=filtered_tables,
+                    relationships=relationships,
+                    metrics=filtered_metrics,
+                    field_synonyms=enrichment.field_synonyms,
+                    dataset_extensions=enrichment.dataset_extensions,
+                    field_extensions=enrichment.field_extensions,
+                )
+                toast_message = "Base YAML generated \u2014 see the Ossie panel on the right."
 
             for w in result.warnings:
                 st.warning(w)
 
             st.session_state.model = result.model
             st.session_state.yaml_editor = ob.to_yaml(result.model)
-            st.toast("Base YAML generated \u2014 see the Ossie panel on the right.", icon="\u2705")
+            st.toast(toast_message, icon="\u2705")
             st.rerun()
 
         except Exception as e:  # noqa: BLE001
@@ -1233,6 +1294,12 @@ st.session_state.setdefault("registry_message", None)
 if st.session_state.get("_pending_model") is not None:
     st.session_state.model = st.session_state.pop("_pending_model")
     st.session_state.yaml_editor = ob.to_yaml(st.session_state.model)
+
+# Same "can't touch a widget's state after it's instantiated" constraint
+# applies to the "Model name" sidebar field -- loading from the registry
+# stashes the loaded model's own name here so it shows up there too.
+if st.session_state.get("_pending_model_name") is not None:
+    st.session_state["model_name_input"] = st.session_state.pop("_pending_model_name")
 
 # ---------------------------------------------------------------------------
 # Sidebar: model settings, section navigation, sample data, templates, reset
