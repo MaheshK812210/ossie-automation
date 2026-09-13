@@ -30,13 +30,17 @@ from typing import Any, Dict, List, Tuple
 
 import streamlit as st
 import yaml
+from dotenv import load_dotenv
 from streamlit_tree_select import tree_select
 
 import fabric_deploy as fd
+import git_registry as gitreg
 import ossie_builder as ob
 import powerbi_export as pbe
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(ROOT_DIR, ".env"))  # populates GIT_REGISTRY_TOKEN etc. if present; no-op otherwise
+
 SCHEMA_PATH = os.path.join(ROOT_DIR, "schema", "ossie-schema.json")
 SAMPLE_DIR = os.path.join(ROOT_DIR, "sample_data")
 
@@ -66,6 +70,13 @@ SECTIONS = [
     ("bi", "\U0001f504 BI Conversions"),
     ("ai_agent", "\U0001f916 AI Agent Invocation"),
 ]
+
+# Only these two sections save/load against the model registry -- Base
+# Model writes/reads basemodel/, Enrich Base Model writes/reads AIEnrich/.
+REGISTRY_DIR_BY_SECTION = {
+    "base_model": gitreg.BASE_MODEL_DIR,
+    "enrich": gitreg.AI_ENRICH_DIR,
+}
 
 st.set_page_config(
     page_title="Ossie Semantic Model Builder",
@@ -457,6 +468,95 @@ def _render_yaml_panel(height: int, fullscreen: bool):
                 st.error(f"Could not parse your edits as valid YAML: {e}")
 
         _show_validation(st.session_state.model)
+        _render_registry_section()
+
+
+def _render_registry_section():
+    """Save/load the current YAML to/from the GitHub-backed model registry
+    (see git_registry.py). Only shown for the Base Model and Enrich Base
+    Model sections -- each saves/loads its own directory in the registry
+    repo (basemodel/ and AIEnrich/ respectively). The model name field
+    (sidebar) determines the saved file name; saving always overwrites
+    that file ("last write wins") -- git's own commit history on the
+    registry repo is the version log.
+    """
+    registry_dir = REGISTRY_DIR_BY_SECTION.get(st.session_state.active_section)
+    if registry_dir is None:
+        return
+
+    st.divider()
+    st.markdown(
+        f"**\U0001f4da Registry** \u2014 `{registry_dir}/` in "
+        f"[`{gitreg.DEFAULT_OWNER}/{gitreg.DEFAULT_REPO}`](https://github.com/{gitreg.DEFAULT_OWNER}/{gitreg.DEFAULT_REPO})"
+    )
+
+    if st.session_state.registry_message:
+        kind, text = st.session_state.registry_message
+        (st.success if kind == "success" else st.error)(text)
+        st.session_state.registry_message = None
+
+    token = gitreg.get_registry_token()
+    if not token:
+        st.caption(
+            "Not configured. Copy `.env.example` to `.env` and set `GIT_REGISTRY_TOKEN` (a "
+            "GitHub personal access token with write access to the registry repo) to enable "
+            "saving/loading models here."
+        )
+        return
+
+    filename = gitreg.safe_model_filename(_current_model_name())
+    save_cols = st.columns([2, 1])
+    with save_cols[0]:
+        commit_message = st.text_input(
+            "Save notes",
+            key=f"registry_commit_msg_{st.session_state.active_section}",
+            label_visibility="collapsed",
+            placeholder="Save notes (becomes the git commit message)",
+        )
+    with save_cols[1]:
+        if st.button(f"\U0001f4be Save to {registry_dir}/", use_container_width=True, key=f"registry_save_{st.session_state.active_section}"):
+            result = gitreg.save_model(
+                registry_dir, filename, st.session_state.yaml_editor,
+                commit_message or f"Save {filename}", token,
+            )
+            if result.success:
+                msg = f"\u2705 Saved `{filename}` to `{registry_dir}/`."
+                if result.commit_url:
+                    msg += f" [View commit]({result.commit_url})"
+                st.session_state.registry_message = ("success", msg)
+            else:
+                st.session_state.registry_message = ("error", f"\u274c {result.message}")
+            st.rerun()
+
+    with st.expander(f"\U0001f4c2 Load from {registry_dir}/", expanded=False):
+        list_result = gitreg.list_models(registry_dir, token)
+        if not list_result.success:
+            st.error(f"Failed to list saved models: {list_result.message}")
+        elif not list_result.files:
+            st.caption("No models saved here yet.")
+        else:
+            display_names = [gitreg.display_name_from_filename(f) for f in list_result.files]
+            chosen = st.selectbox(
+                "Model", display_names, key=f"registry_load_choice_{st.session_state.active_section}"
+            )
+            if st.button("\U0001f4e5 Load selected model", key=f"registry_load_btn_{st.session_state.active_section}"):
+                chosen_filename = list_result.files[display_names.index(chosen)]
+                load_result = gitreg.load_model(registry_dir, chosen_filename, token)
+                if not load_result.success:
+                    st.session_state.registry_message = ("error", f"\u274c {load_result.message}")
+                    st.rerun()
+                    return
+                try:
+                    parsed = ob.parse_yaml_text(load_result.content)
+                except (yaml.YAMLError, ValueError) as e:
+                    st.session_state.registry_message = ("error", f"\u274c Loaded file isn't valid YAML: {e}")
+                    st.rerun()
+                    return
+                # Can't touch st.session_state.yaml_editor directly here --
+                # that widget was already instantiated earlier in this run.
+                st.session_state["_pending_model"] = parsed
+                st.session_state.registry_message = ("success", f"\u2705 Loaded '{chosen}' from `{registry_dir}/`.")
+                st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -1035,6 +1135,7 @@ st.session_state.setdefault("pbi_export", None)
 st.session_state.setdefault("pbi_metric_preview", None)
 st.session_state.setdefault("fabric_deploy_result", None)
 st.session_state.setdefault("active_section", SECTIONS[0][0])
+st.session_state.setdefault("registry_message", None)
 
 # A widget's session_state value can only be set BEFORE that widget is
 # instantiated in a given script run. The Enrich section computes its
@@ -1120,6 +1221,7 @@ with st.sidebar:
         st.session_state.pbi_metric_preview = None
         st.session_state.fabric_deploy_result = None
         st.session_state.yaml_fullscreen = False
+        st.session_state.registry_message = None
         st.rerun()
 
 # ---------------------------------------------------------------------------

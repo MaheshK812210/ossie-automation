@@ -23,11 +23,12 @@ it immediately with a bundled example data model -- no files required.
 ## Layout
 
 - **Sidebar** (collapsible with Streamlit's own arrow): model
-  name/description settings, a **section** selector (radio list) --
-  **Base Model**, **Enrich Base Model**, **BI Conversions**, **AI Agent
-  Invocation** (placeholder) -- plus sample data, template downloads, and
-  reset. Everything you configure or navigate with lives here in one
-  place, and you can collapse it any time to reclaim screen width.
+  name/description settings, a **section** selector (one button per
+  section, the active one highlighted) -- **Base Model**, **Enrich Base
+  Model**, **BI Conversions**, **AI Agent Invocation** (placeholder) --
+  plus sample data, template downloads, and reset. Everything you
+  configure or navigate with lives here in one place, and you can
+  collapse it any time to reclaim screen width.
 - **Center column**: renders whichever section is currently selected in
   the sidebar.
 - **Right column ("Ossie")**: a persistent, always-visible YAML view/edit
@@ -151,6 +152,46 @@ natural-language questions using the current model's metrics,
 relationships, and `ai_context`). It shows a disabled input/button once a
 base YAML exists; the actual agent invocation code is not implemented yet.
 
+## Model registry (save/load to a git repo)
+
+The **Ossie** panel (right column) has a **📚 Registry** section below
+"Apply edits"/"Download YAML", visible in the **Base Model** and **Enrich
+Base Model** sections only:
+
+- **Base Model** saves/loads `basemodel/<model name>.ossie.yaml`
+- **Enrich Base Model** saves/loads `AIEnrich/<model name>.ossie.yaml`
+
+Both live in a separate GitHub repository
+([`MaheshK812210/ModelRegitry`](https://github.com/MaheshK812210/ModelRegitry)
+by default, overridable -- see below) via the GitHub Contents API
+(`git_registry.py`) -- no local git clone, no desktop application.
+
+- **Filename**: derived from the sidebar's **Model name** field (one file
+  per model name per directory).
+- **Save** always **overwrites** that file ("last write wins" -- whichever
+  save reaches GitHub last simply replaces the content, with no conflict
+  check shown to you). Versioning comes from the registry repo's own git
+  history on that file, not from separate timestamped files; the optional
+  "Save notes" field becomes the commit message.
+- **Load** shows a dropdown of every model currently saved in that
+  section's directory; pick one and click **Load selected model** to pull
+  it into the YAML panel (you can then edit and save it back).
+
+### Configuring the registry token
+
+Copy `.env.example` to `.env` and set:
+
+```bash
+GIT_REGISTRY_TOKEN=ghp_...          # GitHub PAT with write access to the registry repo
+GIT_REGISTRY_OWNER=MaheshK812210    # optional, defaults shown
+GIT_REGISTRY_REPO=ModelRegitry
+GIT_REGISTRY_BRANCH=main
+```
+
+`.env` is git-ignored -- it's never committed. Without a token configured,
+the Registry section shows a clear "not configured" message instead of
+erroring; every other feature in the app works fine without it.
+
 ## What you upload
 
 ### 1. Table & column metadata (required)
@@ -272,12 +313,15 @@ app.py                            Streamlit UI (sidebar settings/nav, center = a
 ossie_builder.py                  Ossie parsing + YAML generation/merge logic (framework-free, unit-tested)
 powerbi_export.py                 Ossie -> Power BI (TMSL/TMDL) conversion + synthetic-data metric preview
 fabric_deploy.py                  Headless Fabric REST API deployment (no Power BI Desktop required)
+git_registry.py                   Save/load models to a GitHub-backed registry repo (GitHub Contents API)
 schema/ossie-schema.json           Official Apache Ossie JSON Schema (bundled for validation)
 sample_data/                       Example input files (Account/Position data model)
 scripts/generate_sample_data.py    Regenerates the sample_data/ files
 tests/test_ossie_builder.py        Pytest suite: base generation + AI-context enrichment merge behavior
 tests/test_powerbi_export.py       Pytest suite: SQL->DAX translation, TMSL/TMDL output, metric preview
 tests/test_fabric_deploy.py        Pytest suite: Fabric API payload construction + mocked deploy/poll flows
+tests/test_git_registry.py         Pytest suite: registry list/load/save (create vs. overwrite) + error paths
+.env.example                       Template for GIT_REGISTRY_TOKEN and related settings (copy to .env)
 .streamlit/config.toml             Dev server port/config + color theme
 ```
 
