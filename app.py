@@ -506,9 +506,11 @@ def _render_yaml_panel(height: int, fullscreen: bool):
         st.info(
             "Your generated YAML will appear here once you run **Generate base YAML** in the "
             "**Base Model** tab. This panel stays open across every section so you can view and "
-            "edit it at any time.",
+            "edit it at any time. Already have a model saved in the registry? Load it below "
+            "instead of building a new one.",
             icon="\U0001f4dd",
         )
+        _render_registry_section()
         return
 
     with st.expander("View & edit YAML", expanded=True):
@@ -562,10 +564,17 @@ def _render_registry_section():
     (sidebar) determines the saved file name; saving always overwrites
     that file ("last write wins") -- git's own commit history on the
     registry repo is the version log.
+
+    **Load is available even before any model has been generated** -- you
+    don't need to build a new base model first just to open and edit one
+    that's already saved in the registry. Save, naturally, only makes
+    sense once a model exists (there'd otherwise be nothing to save).
     """
     registry_dir = REGISTRY_DIR_BY_SECTION.get(st.session_state.active_section)
     if registry_dir is None:
         return
+
+    model_loaded = st.session_state.model is not None
 
     st.divider()
     st.markdown(
@@ -587,31 +596,37 @@ def _render_registry_section():
         )
         return
 
-    filename = gitreg.safe_model_filename(_current_model_name())
-    save_cols = st.columns([2, 1])
-    with save_cols[0]:
-        commit_message = st.text_input(
-            "Save notes",
-            key=f"registry_commit_msg_{st.session_state.active_section}",
-            label_visibility="collapsed",
-            placeholder="Save notes (becomes the git commit message)",
-        )
-    with save_cols[1]:
-        if st.button(f"\U0001f4be Save to {registry_dir}/", use_container_width=True, key=f"registry_save_{st.session_state.active_section}"):
-            result = gitreg.save_model(
-                registry_dir, filename, st.session_state.yaml_editor,
-                commit_message or f"Save {filename}", token,
+    if model_loaded:
+        filename = gitreg.safe_model_filename(_current_model_name())
+        save_cols = st.columns([2, 1])
+        with save_cols[0]:
+            commit_message = st.text_input(
+                "Save notes",
+                key=f"registry_commit_msg_{st.session_state.active_section}",
+                label_visibility="collapsed",
+                placeholder="Save notes (becomes the git commit message)",
             )
-            if result.success:
-                msg = f"\u2705 Saved `{filename}` to `{registry_dir}/`."
-                if result.commit_url:
-                    msg += f" [View commit]({result.commit_url})"
-                st.session_state.registry_message = ("success", msg)
-            else:
-                st.session_state.registry_message = ("error", f"\u274c {result.message}")
-            st.rerun()
+        with save_cols[1]:
+            if st.button(f"\U0001f4be Save to {registry_dir}/", use_container_width=True, key=f"registry_save_{st.session_state.active_section}"):
+                result = gitreg.save_model(
+                    registry_dir, filename, st.session_state.yaml_editor,
+                    commit_message or f"Save {filename}", token,
+                )
+                if result.success:
+                    msg = f"\u2705 Saved `{filename}` to `{registry_dir}/`."
+                    if result.commit_url:
+                        msg += f" [View commit]({result.commit_url})"
+                    st.session_state.registry_message = ("success", msg)
+                else:
+                    st.session_state.registry_message = ("error", f"\u274c {result.message}")
+                st.rerun()
+    else:
+        st.caption(
+            "Generate or edit a model first to save one here \u2014 but you can **load** an "
+            "already-saved model below right now, with no new model needed first."
+        )
 
-    with st.expander(f"\U0001f4c2 Load from {registry_dir}/", expanded=False):
+    with st.expander(f"\U0001f4c2 Load from {registry_dir}/", expanded=not model_loaded):
         list_result = gitreg.list_models(registry_dir, token)
         if not list_result.success:
             st.error(f"Failed to list saved models: {list_result.message}")

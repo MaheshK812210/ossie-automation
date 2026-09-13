@@ -178,6 +178,13 @@ Both live in a separate GitHub repository
 by default, overridable -- see below) via the GitHub Contents API
 (`git_registry.py`) -- no local git clone, no desktop application.
 
+- **Load works even before you've generated a model**: the Registry
+  section (and its **📂 Load from ...** picker) is shown as soon as you
+  pick the Base Model or Enrich Base Model section, whether or not a
+  model exists yet -- you don't need to run **Generate base YAML** first
+  just to open and edit a model that's already saved. **Save**, on the
+  other hand, only appears once a model exists (there'd be nothing to
+  save otherwise).
 - **Filename**: derived from the sidebar's **Model name** field (one file
   per model name per directory).
 - **Save** always **overwrites** that file ("last write wins" -- whichever
