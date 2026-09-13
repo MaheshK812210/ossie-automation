@@ -85,73 +85,144 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-CUSTOM_CSS = """
-<style>
-/* Catchy layered gradient backdrop instead of plain white */
-.stApp {
-    background: radial-gradient(circle at 8% 0%, #EAE3FF 0%, transparent 42%),
-                radial-gradient(circle at 100% 12%, #FFE6F5 0%, transparent 38%),
-                radial-gradient(circle at 20% 100%, #E1F4FF 0%, transparent 45%),
-                linear-gradient(160deg, #F7F4FF 0%, #F3EEFF 50%, #FBF0FA 100%);
-    background-attachment: fixed;
-}
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #EEE7FD 0%, #E3D9FB 100%);
-}
-[data-testid="stSidebar"] > div:first-child {
-    border-right: 1px solid #D8CCF8;
-}
 
-.ossie-hero {
-    background: linear-gradient(135deg, #6C5CE7 0%, #A29BFE 55%, #FD79C6 130%);
+def _build_theme_css(dark: bool) -> str:
+    """Returns the full <style> block for either theme. Streamlit's own
+    base theme (.streamlit/config.toml) is fixed at server start, so "dark
+    mode" here is a thorough CSS override of the elements we can safely
+    target (app/sidebar backgrounds, cards, text, form controls, buttons)
+    rather than a native Streamlit theme switch -- a few deeply-native
+    widget internals may not repaint perfectly, but everything visible and
+    commonly used is covered.
+    """
+    if dark:
+        app_bg = (
+            "radial-gradient(circle at 8% 0%, rgba(108,92,231,0.30) 0%, transparent 45%),"
+            "radial-gradient(circle at 100% 15%, rgba(253,121,198,0.20) 0%, transparent 40%),"
+            "radial-gradient(circle at 15% 100%, rgba(80,160,255,0.18) 0%, transparent 45%),"
+            "linear-gradient(160deg, #14121F 0%, #1B1730 50%, #1F1526 100%)"
+        )
+        sidebar_bg = "linear-gradient(180deg, #1C1830 0%, #241A38 100%)"
+        sidebar_border = "#3A3155"
+        hero_bg = "linear-gradient(135deg, #4B3FA6 0%, #6C5CE7 55%, #C2418F 130%)"
+        hero_shadow = "0 8px 28px rgba(0,0,0,0.45)"
+        card_bg = "#221D33"
+        card_border = "#3A3155"
+        card_shadow = "0 2px 10px rgba(0,0,0,0.35)"
+        text_color = "#EDE9F7"
+        input_bg = "#1A1626"
+        metric_accent = "#A29BFE"
+        secondary_btn_bg = "#241E38"
+    else:
+        app_bg = (
+            "radial-gradient(circle at 8% 0%, #EAE3FF 0%, transparent 42%),"
+            "radial-gradient(circle at 100% 12%, #FFE6F5 0%, transparent 38%),"
+            "radial-gradient(circle at 20% 100%, #E1F4FF 0%, transparent 45%),"
+            "linear-gradient(160deg, #F7F4FF 0%, #F3EEFF 50%, #FBF0FA 100%)"
+        )
+        sidebar_bg = "linear-gradient(180deg, #EEE7FD 0%, #E3D9FB 100%)"
+        sidebar_border = "#D8CCF8"
+        hero_bg = "linear-gradient(135deg, #6C5CE7 0%, #A29BFE 55%, #FD79C6 130%)"
+        hero_shadow = "0 8px 24px rgba(108, 92, 231, 0.25)"
+        card_bg = "#FFFFFF"
+        card_border = "#E4DEFB"
+        card_shadow = "0 2px 8px rgba(108, 92, 231, 0.10)"
+        text_color = "#1E1B2E"
+        input_bg = "#FFFFFF"
+        metric_accent = "#6C5CE7"
+        secondary_btn_bg = "#FFFFFF"
+
+    return f"""
+<style>
+.stApp {{
+    background: {app_bg};
+    background-attachment: fixed;
+}}
+[data-testid="stSidebar"] {{
+    background: {sidebar_bg};
+}}
+[data-testid="stSidebar"] > div:first-child {{
+    border-right: 1px solid {sidebar_border};
+}}
+
+.ossie-hero {{
+    background: {hero_bg};
     padding: 1.6rem 2rem;
     border-radius: 16px;
     color: white;
     margin-bottom: 1.3rem;
-    box-shadow: 0 8px 24px rgba(108, 92, 231, 0.25);
-}
-.ossie-hero h1 { margin: 0; font-size: 1.85rem; }
-.ossie-hero p { margin: 0.45rem 0 0 0; opacity: 0.96; font-size: 1.02rem; line-height: 1.5; }
-.ossie-hero code { background: rgba(255,255,255,0.2); color: white; padding: 0.05rem 0.35rem; border-radius: 4px; }
+    box-shadow: {hero_shadow};
+}}
+.ossie-hero h1 {{ margin: 0; font-size: 1.85rem; }}
+.ossie-hero p {{ margin: 0.45rem 0 0 0; opacity: 0.96; font-size: 1.02rem; line-height: 1.5; }}
+.ossie-hero code {{ background: rgba(255,255,255,0.2); color: white; padding: 0.05rem 0.35rem; border-radius: 4px; }}
 
-/* White "card" surfaces so content pops against the tinted background */
-div[data-testid="stExpander"] {
-    background-color: #FFFFFF;
-    border: 1px solid #E4DEFB;
+/* "Card" surfaces so content pops against the tinted background */
+div[data-testid="stExpander"] {{
+    background-color: {card_bg};
+    border: 1px solid {card_border};
     border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(108, 92, 231, 0.10);
-}
-div[data-testid="stExpander"] summary {
+    box-shadow: {card_shadow};
+}}
+div[data-testid="stExpander"] summary {{
     font-weight: 600;
-}
-button[kind="primary"] {
+    color: {text_color};
+}}
+button[kind="primary"] {{
     border-radius: 8px;
-    box-shadow: 0 2px 6px rgba(108, 92, 231, 0.35);
-}
-div[data-testid="stMetric"] {
-    background-color: #FFFFFF;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(108, 92, 231, 0.40);
+}}
+button[kind="secondary"] {{
+    border-radius: 8px;
+    background-color: {secondary_btn_bg};
+    border: 1px solid {card_border};
+}}
+div[data-testid="stMetric"] {{
+    background-color: {card_bg};
     border-radius: 10px;
     padding: 0.6rem 0.8rem 0.3rem 0.8rem;
-    border: 1px solid #E4DEFB;
-    border-left: 4px solid #6C5CE7;
-    box-shadow: 0 1px 4px rgba(108, 92, 231, 0.08);
-}
-div[data-testid="stTextArea"] textarea {
-    background-color: #FFFFFF;
+    border: 1px solid {card_border};
+    border-left: 4px solid {metric_accent};
+    box-shadow: {card_shadow};
+}}
+div[data-testid="stTextArea"] textarea {{
+    background-color: {input_bg};
+    color: {text_color};
     border-radius: 10px;
-}
-div[data-testid="stDataFrame"], div[data-testid="stTable"] {
-    background-color: #FFFFFF;
+    border: 1px solid {card_border};
+}}
+div[data-testid="stTextInput"] input {{
+    background-color: {input_bg};
+    color: {text_color};
+    border: 1px solid {card_border};
+}}
+div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {{
+    background-color: {input_bg};
+    border-color: {card_border};
+}}
+section[data-testid="stFileUploaderDropzone"] {{
+    background-color: {input_bg};
+    border: 1px solid {card_border};
+}}
+div[data-testid="stDataFrame"], div[data-testid="stTable"] {{
+    background-color: {card_bg};
     border-radius: 10px;
     overflow: hidden;
-}
-div[data-testid="stTabs"] button[role="tab"] {
+}}
+div[data-testid="stTabs"] button[role="tab"] {{
     border-radius: 8px 8px 0 0;
-}
-hr { margin: 0.6rem 0; }
+}}
+[data-testid="stMarkdownContainer"], [data-testid="stCaptionContainer"], [data-testid="stWidgetLabel"] {{
+    color: {text_color};
+}}
+hr {{ margin: 0.6rem 0; border-color: {card_border}; }}
 </style>
 """
-st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+
+st.session_state.setdefault("dark_mode", False)
+st.markdown(_build_theme_css(st.session_state.dark_mode), unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -564,6 +635,7 @@ def _render_registry_section():
 # ---------------------------------------------------------------------------
 
 def _render_base_model_section():
+    st.badge("BASE MODEL", color="blue")
     st.header("\U0001f4e6 Base Model")
     st.caption(
         "There's no separate database/schema or SQL-dialect setting here: the dataset `source` "
@@ -702,6 +774,7 @@ def _render_base_model_section():
 # ---------------------------------------------------------------------------
 
 def _render_enrich_section():
+    st.badge("ENRICH BASE MODEL", color="violet")
     st.header("\U0001f9e9 Enrich Base Model")
 
     if st.session_state.model is None:
@@ -774,6 +847,7 @@ def _render_enrich_section():
 # ---------------------------------------------------------------------------
 
 def _render_bi_section():
+    st.badge("BI CONVERSIONS", color="orange")
     st.header("\U0001f504 BI Conversions")
 
     if st.session_state.model is None:
@@ -1026,6 +1100,7 @@ def _render_bi_section():
 # ---------------------------------------------------------------------------
 
 def _render_ai_agent_section():
+    st.badge("AI AGENT INVOCATION", color="gray")
     st.header("\U0001f916 AI Agent Invocation")
     st.info(
         "**Placeholder.** This section will host AI agent invocation against the current Ossie "
@@ -1153,6 +1228,13 @@ if st.session_state.get("_pending_model") is not None:
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
+    _theme_cols = st.columns([3, 2])
+    with _theme_cols[0]:
+        st.caption("Appearance")
+    with _theme_cols[1]:
+        st.toggle("\U0001f319 Dark", key="dark_mode", help="Toggle dark/light theme")
+    st.divider()
+
     st.header("\u2699\ufe0f Model settings")
     st.text_input("Model name", value="account_position_model", key="model_name_input")
     st.text_area(

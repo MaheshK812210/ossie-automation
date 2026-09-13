@@ -22,13 +22,23 @@ it immediately with a bundled example data model -- no files required.
 
 ## Layout
 
-- **Sidebar** (collapsible with Streamlit's own arrow): model
-  name/description settings, a **section** selector (one button per
-  section, the active one highlighted) -- **Base Model**, **Enrich Base
-  Model**, **BI Conversions**, **AI Agent Invocation** (placeholder) --
-  plus sample data, template downloads, and reset. Everything you
-  configure or navigate with lives here in one place, and you can
-  collapse it any time to reclaim screen width.
+- **Sidebar** (collapsible with Streamlit's own arrow): a **🌙 Dark**
+  appearance toggle at the top, model name/description settings, a
+  **section** selector (one button per section, the active one
+  highlighted) -- **Base Model**, **Enrich Base Model**, **BI
+  Conversions**, **AI Agent Invocation** (placeholder) -- plus sample
+  data, template downloads, and reset. Everything you configure or
+  navigate with lives here in one place, and you can collapse it any time
+  to reclaim screen width.
+- Each section shows a small colored badge above its header for quick
+  visual identity: **BASE MODEL** (blue), **ENRICH BASE MODEL** (violet),
+  **BI CONVERSIONS** (orange), **AI AGENT INVOCATION** (gray).
+- **Dark / light theme**: toggle any time without losing your place --
+  the current model, generated YAML, and selected section all persist
+  across the switch. This is a thorough CSS re-theme (backgrounds, cards,
+  text, form controls, buttons) rather than Streamlit's native theme
+  system (which is fixed at server start), so it can be toggled instantly
+  per-session.
 - **Center column**: renders whichever section is currently selected in
   the sidebar.
 - **Right column ("Ossie")**: a persistent, always-visible YAML view/edit
