@@ -22,14 +22,16 @@ it immediately with a bundled example data model -- no files required.
 
 ## Layout
 
-- **Sidebar** (collapsible with Streamlit's own arrow): a **🌙 Dark**
-  appearance toggle at the top, model name/description settings, a
-  **section** selector (one button per section, the active one
-  highlighted) -- **Base Model**, **Enrich Base Model**, **BI
-  Conversions**, **AI Agent Invocation** (placeholder) -- plus sample
-  data, template downloads, and reset. Everything you configure or
-  navigate with lives here in one place, and you can collapse it any time
-  to reclaim screen width.
+- **Sidebar** (collapsible with Streamlit's own arrow): **⚙️ Model
+  settings** (name/description) at the top, with a small **🌙** dark/light
+  toggle next to its header, then a **section** selector (one button per
+  section, the active one highlighted) -- **Base Model**, **Enrich Base
+  Model**, **BI Conversions**, **AI Agent Invocation** (placeholder) --
+  plus sample data, template downloads, and reset. Everything you
+  configure or navigate with lives here in one place, and you can
+  collapse it any time to reclaim screen width.
+- Streamlit's default top toolbar (hamburger menu / "Deploy" button) is
+  hidden -- it isn't useful for this app and just took up space.
 - Each section shows a small colored badge above its header for quick
   visual identity: **BASE MODEL** (blue), **ENRICH BASE MODEL** (violet),
   **BI CONVERSIONS** (orange), **AI AGENT INVOCATION** (gray).

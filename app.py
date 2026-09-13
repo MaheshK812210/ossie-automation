@@ -134,6 +134,18 @@ def _build_theme_css(dark: bool) -> str:
 
     return f"""
 <style>
+/* Hide Streamlit's default top header bar (hamburger menu, Deploy button,
+   status widget) -- not useful for this app and just wastes vertical space. */
+header[data-testid="stHeader"] {{
+    display: none;
+}}
+div[data-testid="stToolbar"], #MainMenu {{
+    display: none;
+}}
+/* Reclaim the vertical space the (now-hidden) header used to reserve. */
+div[data-testid="stMainBlockContainer"], div[data-testid="stSidebarUserContent"] {{
+    padding-top: 1.5rem;
+}}
 .stApp {{
     background: {app_bg};
     background-attachment: fixed;
@@ -1228,14 +1240,12 @@ if st.session_state.get("_pending_model") is not None:
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    _theme_cols = st.columns([3, 2])
-    with _theme_cols[0]:
-        st.caption("Appearance")
-    with _theme_cols[1]:
-        st.toggle("\U0001f319 Dark", key="dark_mode", help="Toggle dark/light theme")
-    st.divider()
+    _header_cols = st.columns([4, 1])
+    with _header_cols[0]:
+        st.header("\u2699\ufe0f Model settings")
+    with _header_cols[1]:
+        st.toggle("\U0001f319", key="dark_mode", help="Toggle dark/light theme")
 
-    st.header("\u2699\ufe0f Model settings")
     st.text_input("Model name", value="account_position_model", key="model_name_input")
     st.text_area(
         "Model description",
