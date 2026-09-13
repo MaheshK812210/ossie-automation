@@ -21,6 +21,12 @@ Two-stage workflow
    instructions/synonyms/examples onto whatever is already there (never
    overwrites) and appends any ``Custom Extension`` values as new
    ``custom_extensions`` entries.
+
+Once a model exists (freshly generated, hand-edited, or loaded from the
+registry), ``merge_updates_into_model`` supports incremental updates --
+uploading just new/changed table metadata, just metrics/synonyms/
+extensions, and/or just relationships -- without requiring the full set of
+files again.
 """
 
 from __future__ import annotations
@@ -826,6 +832,160 @@ def build_semantic_model(
 
     model = {"version": OSSIE_VERSION, "semantic_model": [semantic_model_entry]}
     return BuildResult(model=model, warnings=warnings)
+
+
+# ---------------------------------------------------------------------------
+# Incremental updates -- merges newly-uploaded pieces into an EXISTING model
+# (e.g. one loaded from the registry) without requiring a full table
+# metadata re-upload. Any subset of the arguments may be given; whatever
+# isn't given is left completely untouched.
+# ---------------------------------------------------------------------------
+
+def merge_updates_into_model(
+    model: Dict[str, Any],
+    *,
+    new_tables: Optional[Dict[str, TableMeta]] = None,
+    metrics: Optional[List[Dict[str, str]]] = None,
+    field_synonyms: Optional[Dict[Tuple[str, str], List[str]]] = None,
+    dataset_extensions: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    field_extensions: Optional[Dict[Tuple[str, str], List[Dict[str, Any]]]] = None,
+    relationships: Optional[List[Dict[str, Any]]] = None,
+) -> BuildResult:
+    """Return a NEW model with newly-uploaded pieces merged into an existing
+    one -- the "apply changes to a loaded model" path used once a base
+    model already exists (freshly generated, hand-edited, or loaded from the
+    registry), so re-uploading the *full* table metadata is no longer
+    required just to add a metric or a relationship.
+
+    - ``new_tables``: a dataset with the same name already in the model is
+      fully REPLACED (mirrors re-uploading that table's own metadata row);
+      an unseen name is ADDED as a new dataset.
+    - ``metrics``: upserted by name (replaces a metric with the same name,
+      else appends).
+    - ``field_synonyms`` / ``field_extensions`` / ``dataset_extensions``:
+      for a table that's part of ``new_tables`` these feed straight into
+      the freshly-built dataset (same as ``build_dataset``); for any other
+      table they're merged onto the *existing* dataset/field in-place
+      (synonyms are added/deduped, custom_extensions are appended).
+    - ``relationships``: upserted by name; a relationship referencing a
+      table that doesn't exist in the model (before or after this update)
+      is skipped with a warning, exactly like the initial build.
+
+    Nothing not mentioned here is ever touched -- e.g. calling this with
+    only ``relationships`` set leaves every dataset, field, and metric
+    exactly as it was.
+    """
+    new_tables = new_tables or {}
+    field_synonyms = field_synonyms or {}
+    dataset_extensions = dataset_extensions or {}
+    field_extensions = field_extensions or {}
+    metrics = metrics or []
+    relationships = relationships or []
+
+    warnings: List[str] = []
+    new_model = copy.deepcopy(model)
+    entries = new_model.get("semantic_model") or []
+    if not entries:
+        raise ValueError("The loaded model has no semantic_model entries to update.")
+    sm = entries[0]
+    datasets = sm.setdefault("datasets", [])
+    ds_by_name = {d["name"]: d for d in datasets}
+
+    for table_name, table in new_tables.items():
+        rebuilt = build_dataset(
+            table,
+            field_synonyms=field_synonyms,
+            field_extensions=field_extensions,
+            dataset_extensions=dataset_extensions,
+        )
+        if table_name in ds_by_name:
+            idx = datasets.index(ds_by_name[table_name])
+            datasets[idx] = rebuilt
+        else:
+            datasets.append(rebuilt)
+        ds_by_name[table_name] = rebuilt
+
+    def _find_field(table_name: str, column_name: str) -> Optional[Dict[str, Any]]:
+        ds = ds_by_name.get(table_name)
+        if not ds:
+            return None
+        return next((f for f in ds.get("fields", []) if f.get("name") == column_name), None)
+
+    for (table_name, column_name), syns in field_synonyms.items():
+        if table_name in new_tables:
+            continue  # already applied via build_dataset above
+        fld = _find_field(table_name, column_name)
+        if fld is None:
+            warnings.append(
+                f"Synonyms for unknown field '{table_name}.{column_name}' -- skipped."
+            )
+            continue
+        ctx = dict(fld.get("ai_context") or {})
+        ctx["synonyms"] = dedupe(list(ctx.get("synonyms") or []) + syns)
+        fld["ai_context"] = ctx
+
+    for (table_name, column_name), exts in field_extensions.items():
+        if table_name in new_tables:
+            continue
+        fld = _find_field(table_name, column_name)
+        if fld is None:
+            warnings.append(
+                f"Custom extension for unknown field '{table_name}.{column_name}' -- skipped."
+            )
+            continue
+        fld.setdefault("custom_extensions", []).extend(exts)
+
+    for table_name, exts in dataset_extensions.items():
+        if table_name in new_tables:
+            continue
+        ds = ds_by_name.get(table_name)
+        if ds is None:
+            warnings.append(f"Custom extension for unknown table '{table_name}' -- skipped.")
+            continue
+        ds.setdefault("custom_extensions", []).extend(exts)
+
+    if metrics:
+        metrics_list = sm.setdefault("metrics", [])
+        metrics_by_name = {m["name"]: m for m in metrics_list}
+        for m in metrics:
+            try:
+                built = build_metric(m)
+            except KeyError as exc:  # pragma: no cover -- defensive
+                warnings.append(f"Skipping malformed metric entry: missing {exc}.")
+                continue
+            if built["name"] in metrics_by_name:
+                idx = metrics_list.index(metrics_by_name[built["name"]])
+                metrics_list[idx] = built
+            else:
+                metrics_list.append(built)
+            metrics_by_name[built["name"]] = built
+
+    if relationships:
+        rel_list = sm.setdefault("relationships", [])
+        rel_by_name = {r["name"]: r for r in rel_list}
+        known_tables = set(ds_by_name.keys())
+        for rel in relationships:
+            if rel["from_table"] not in known_tables:
+                warnings.append(
+                    f"Relationship '{rel['name']}' references unknown table "
+                    f"'{rel['from_table']}' (from) -- skipped."
+                )
+                continue
+            if rel["to_table"] not in known_tables:
+                warnings.append(
+                    f"Relationship '{rel['name']}' references unknown table "
+                    f"'{rel['to_table']}' (to) -- skipped."
+                )
+                continue
+            built = build_relationship(rel)
+            if built["name"] in rel_by_name:
+                idx = rel_list.index(rel_by_name[built["name"]])
+                rel_list[idx] = built
+            else:
+                rel_list.append(built)
+            rel_by_name[built["name"]] = built
+
+    return BuildResult(model=new_model, warnings=warnings)
 
 
 # ---------------------------------------------------------------------------

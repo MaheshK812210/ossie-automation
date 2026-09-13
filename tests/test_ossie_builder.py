@@ -329,3 +329,186 @@ def test_unknown_table_in_relationship_generates_warning():
     )
     assert len(result.warnings) == 1
     assert "relationships" not in result.model["semantic_model"][0]
+
+
+# ---------------------------------------------------------------------------
+# merge_updates_into_model -- incremental updates onto an EXISTING model
+# (e.g. one loaded from the registry), without a full metadata re-upload.
+# ---------------------------------------------------------------------------
+
+def test_merge_updates_adds_a_brand_new_table():
+    result, _ = _build_base_model()
+    new_table = ob.TableMeta(
+        table_name="DIM_NEW_THING",
+        asset_type="Dimension",
+        source="WEALTH_DB.PUBLIC.DIM_NEW_THING",
+        columns=[
+            ob.ColumnMeta(
+                table_name="DIM_NEW_THING", column_name="ID", is_primary_key=True, column_position=1
+            )
+        ],
+    )
+    merged = ob.merge_updates_into_model(result.model, new_tables={"DIM_NEW_THING": new_table})
+    assert merged.warnings == []
+
+    ds_by_name = {d["name"]: d for d in merged.model["semantic_model"][0]["datasets"]}
+    assert "DIM_NEW_THING" in ds_by_name
+    assert "FACT_POSITION" in ds_by_name  # existing tables untouched
+
+    # The original model must not have been mutated in place.
+    original_names = {d["name"] for d in result.model["semantic_model"][0]["datasets"]}
+    assert "DIM_NEW_THING" not in original_names
+
+
+def test_merge_updates_replaces_an_existing_table():
+    result, _ = _build_base_model()
+    replacement = ob.TableMeta(
+        table_name="DIM_CLIENT",
+        asset_type="Dimension",
+        source="WEALTH_DB.PUBLIC.DIM_CLIENT",
+        columns=[
+            ob.ColumnMeta(
+                table_name="DIM_CLIENT", column_name="CLIENT_ID", is_primary_key=True, column_position=1
+            ),
+            ob.ColumnMeta(table_name="DIM_CLIENT", column_name="NEW_COLUMN", column_position=2),
+        ],
+    )
+    merged = ob.merge_updates_into_model(result.model, new_tables={"DIM_CLIENT": replacement})
+    ds_by_name = {d["name"]: d for d in merged.model["semantic_model"][0]["datasets"]}
+    field_names = {f["name"] for f in ds_by_name["DIM_CLIENT"]["fields"]}
+    assert field_names == {"CLIENT_ID", "NEW_COLUMN"}
+    # Total dataset count is unchanged -- it was a replace, not an add.
+    assert len(merged.model["semantic_model"][0]["datasets"]) == len(
+        result.model["semantic_model"][0]["datasets"]
+    )
+
+
+def test_merge_updates_upserts_metrics():
+    result, _ = _build_base_model()
+    n_before = len(result.model["semantic_model"][0]["metrics"])
+
+    merged = ob.merge_updates_into_model(
+        result.model,
+        metrics=[
+            {"name": "brand_new_metric", "expression": "SUM(x.y)", "dialect": "ANSI_SQL"},
+            # Same name as an existing sample metric -- must replace, not duplicate.
+            {"name": "total_market_value", "expression": "SUM(FACT_POSITION.MARKET_VALUE) * 2", "dialect": "ANSI_SQL"},
+        ],
+    )
+    metrics = merged.model["semantic_model"][0]["metrics"]
+    assert len(metrics) == n_before + 1
+    by_name = {m["name"]: m for m in metrics}
+    assert "brand_new_metric" in by_name
+    assert by_name["total_market_value"]["expression"]["dialects"][0]["expression"] == (
+        "SUM(FACT_POSITION.MARKET_VALUE) * 2"
+    )
+
+
+def test_merge_updates_adds_synonyms_to_an_existing_field_without_new_metadata():
+    result, _ = _build_base_model()
+    merged = ob.merge_updates_into_model(
+        result.model,
+        field_synonyms={("FACT_POSITION", "MARKET_VALUE"): ["extra synonym"]},
+    )
+    ds_by_name = {d["name"]: d for d in merged.model["semantic_model"][0]["datasets"]}
+    mv_field = next(f for f in ds_by_name["FACT_POSITION"]["fields"] if f["name"] == "MARKET_VALUE")
+    assert "extra synonym" in mv_field["ai_context"]["synonyms"]
+    # Prior synonyms from the base model are preserved, not overwritten.
+    assert "position value" in mv_field["ai_context"]["synonyms"]
+
+    # The original model must not have been mutated in place.
+    original_ds_by_name = {d["name"]: d for d in result.model["semantic_model"][0]["datasets"]}
+    original_mv_field = next(
+        f for f in original_ds_by_name["FACT_POSITION"]["fields"] if f["name"] == "MARKET_VALUE"
+    )
+    assert "extra synonym" not in original_mv_field["ai_context"]["synonyms"]
+
+
+def test_merge_updates_warns_on_synonyms_for_unknown_field():
+    result, _ = _build_base_model()
+    merged = ob.merge_updates_into_model(
+        result.model,
+        field_synonyms={("FACT_POSITION", "DOES_NOT_EXIST"): ["x"]},
+    )
+    assert len(merged.warnings) == 1
+    assert "DOES_NOT_EXIST" in merged.warnings[0]
+
+
+def test_merge_updates_adds_a_new_relationship():
+    result, _ = _build_base_model()
+    n_before = len(result.model["semantic_model"][0]["relationships"])
+    merged = ob.merge_updates_into_model(
+        result.model,
+        relationships=[
+            {
+                "name": "fact_position_to_new_thing",
+                "from_table": "FACT_POSITION",
+                "to_table": "DIM_CLIENT",
+                "from_columns": ["ACCOUNT_ID"],
+                "to_columns": ["CLIENT_ID"],
+                "relationship_type": "many_to_one",
+                "description": "",
+            }
+        ],
+    )
+    rels = merged.model["semantic_model"][0]["relationships"]
+    assert len(rels) == n_before + 1
+    assert merged.warnings == []
+
+
+def test_merge_updates_warns_on_relationship_to_unknown_table():
+    result, _ = _build_base_model()
+    merged = ob.merge_updates_into_model(
+        result.model,
+        relationships=[
+            {
+                "name": "bad_rel",
+                "from_table": "FACT_POSITION",
+                "to_table": "DOES_NOT_EXIST",
+                "from_columns": ["ACCOUNT_ID"],
+                "to_columns": ["ID"],
+                "relationship_type": "",
+                "description": "",
+            }
+        ],
+    )
+    assert len(merged.warnings) == 1
+    assert "DOES_NOT_EXIST" in merged.warnings[0]
+
+
+def test_merge_updates_combined_stays_schema_valid():
+    result, _ = _build_base_model()
+    new_table = ob.TableMeta(
+        table_name="DIM_NEW_THING",
+        source="DIM_NEW_THING",
+        columns=[
+            ob.ColumnMeta(
+                table_name="DIM_NEW_THING", column_name="ID", is_primary_key=True, column_position=1
+            )
+        ],
+    )
+    merged = ob.merge_updates_into_model(
+        result.model,
+        new_tables={"DIM_NEW_THING": new_table},
+        metrics=[{"name": "another_metric", "expression": "COUNT(*)", "dialect": "ANSI_SQL"}],
+        field_synonyms={("FACT_POSITION", "MARKET_VALUE"): ["mkt val v2"]},
+        relationships=[
+            {
+                "name": "fact_position_to_new_thing",
+                "from_table": "FACT_POSITION",
+                "to_table": "DIM_NEW_THING",
+                "from_columns": ["ACCOUNT_ID"],
+                "to_columns": ["ID"],
+                "relationship_type": "",
+                "description": "",
+            }
+        ],
+    )
+    assert merged.warnings == []
+    errors = ob.validate_model(merged.model, SCHEMA_PATH)
+    assert errors == [], f"Schema validation errors: {errors}"
+
+
+def test_merge_updates_raises_if_model_has_no_semantic_model_entries():
+    with pytest.raises(ValueError):
+        ob.merge_updates_into_model({"version": ob.OSSIE_VERSION, "semantic_model": []})
