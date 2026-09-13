@@ -20,19 +20,23 @@ The app starts on `http://localhost:47531` (configured in
 `.streamlit/config.toml`). Click **Load sample data** in the sidebar to try
 it immediately with a bundled example data model -- no files required.
 
-## Layout: three panes
+## Layout
 
-- **Left pane**: model name/description, and a **section** selector
-  (radio list): **Base Model**, **Enrich Base Model**, **BI Conversions**,
-  **AI Agent Invocation** (placeholder).
-- **Center pane**: renders whichever section is currently selected.
-- **Right pane ("Ossie")**: a persistent, always-visible YAML view/edit
+- **Sidebar** (collapsible with Streamlit's own arrow): model
+  name/description settings, a **section** selector (radio list) --
+  **Base Model**, **Enrich Base Model**, **BI Conversions**, **AI Agent
+  Invocation** (placeholder) -- plus sample data, template downloads, and
+  reset. Everything you configure or navigate with lives here in one
+  place, and you can collapse it any time to reclaim screen width.
+- **Center column**: renders whichever section is currently selected in
+  the sidebar.
+- **Right column ("Ossie")**: a persistent, always-visible YAML view/edit
   panel shared by every section -- whatever the Base Model section
   generates, or the Enrich section enriches, shows up here immediately.
-  Click **Full screen »** to expand it to (almost) the full page width;
-  **« Exit full screen** restores the 3-pane view. Nothing is lost when
-  toggling or switching sections -- the current model and YAML text
-  persist throughout.
+  Click **Full screen »** to expand it to (almost) the full page width
+  (hiding the center column); **« Exit full screen** restores the normal
+  view. Nothing is lost when toggling or switching sections -- the
+  current model and YAML text persist throughout.
 
 There is **no separate "database.schema" or "dialect" setting** anywhere
 in the UI: each dataset's `source` is inferred entirely from the metadata
@@ -264,7 +268,7 @@ every time it changes, and the app reports any validation errors inline.
 ## Project layout
 
 ```
-app.py                            Streamlit UI (3-pane layout: settings/nav, active section, Ossie YAML)
+app.py                            Streamlit UI (sidebar settings/nav, center = active section, right = Ossie YAML)
 ossie_builder.py                  Ossie parsing + YAML generation/merge logic (framework-free, unit-tested)
 powerbi_export.py                 Ossie -> Power BI (TMSL/TMDL) conversion + synthetic-data metric preview
 fabric_deploy.py                  Headless Fabric REST API deployment (no Power BI Desktop required)

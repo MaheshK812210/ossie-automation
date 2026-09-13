@@ -1,17 +1,20 @@
-"""Streamlit app: a 3-pane Apache Ossie (Open Semantic Interchange) semantic
-model builder.
+"""Streamlit app: an Apache Ossie (Open Semantic Interchange) semantic model
+builder.
 
 Layout
 ------
-- Left pane: model name/description settings, plus a section selector
-  (tabs): Base Model, Enrich Base Model, BI Conversions, AI Agent
-  Invocation (placeholder).
-- Center pane: renders whichever section is currently selected in the
-  left pane.
-- Right pane ("Ossie" section): a persistent, always-visible YAML
-  view/edit panel, shared by every section -- whatever the Base Model tab
-  generates, or the Enrich tab enriches, shows up here immediately. It can
-  be expanded to full screen with the \u00ab / \u00bb toggle.
+- Sidebar (collapsible): model name/description settings, a section
+  selector (Base Model, Enrich Base Model, BI Conversions, AI Agent
+  Invocation -- placeholder), sample data, template downloads, and reset.
+  Everything you configure or navigate with lives in one place here.
+- Main area, center column: renders whichever section is currently
+  selected in the sidebar.
+- Main area, right column ("Ossie" section): a persistent, always-visible
+  YAML view/edit panel, shared by every section -- whatever the Base Model
+  section generates, or the Enrich section enriches, shows up here
+  immediately. It can be expanded to full screen with the \u00ab / \u00bb
+  toggle (which hides the center column so the YAML can take up almost the
+  full page width).
 
 There is no separate "database.schema" or "dialect" setting anywhere in
 this UI: the dataset ``source`` is inferred entirely from the metadata
@@ -133,14 +136,6 @@ div[data-testid="stDataFrame"], div[data-testid="stTable"] {
 }
 div[data-testid="stTabs"] button[role="tab"] {
     border-radius: 8px 8px 0 0;
-}
-/* Left-pane section nav + model settings card */
-.ossie-left-pane {
-    background-color: #FFFFFF;
-    border: 1px solid #E4DEFB;
-    border-radius: 12px;
-    padding: 1rem 1rem 0.4rem 1rem;
-    box-shadow: 0 2px 8px rgba(108, 92, 231, 0.10);
 }
 hr { margin: 0.6rem 0; }
 </style>
@@ -462,35 +457,6 @@ def _render_yaml_panel(height: int, fullscreen: bool):
                 st.error(f"Could not parse your edits as valid YAML: {e}")
 
         _show_validation(st.session_state.model)
-
-
-# ---------------------------------------------------------------------------
-# Left pane -- model settings + section navigation
-# ---------------------------------------------------------------------------
-
-def _render_left_pane():
-    st.markdown('<div class="ossie-left-pane">', unsafe_allow_html=True)
-    st.subheader("\u2699\ufe0f Model settings")
-    st.text_input("Model name", value="account_position_model", key="model_name_input")
-    st.text_area(
-        "Model description",
-        value="Investment account and position semantic model covering client, "
-        "account, security, and calendar dimensions with a daily position fact.",
-        height=90,
-        key="model_description_input",
-    )
-
-    st.divider()
-    st.subheader("\U0001f4cb Sections")
-    labels = [label for _, label in SECTIONS]
-    keys = [key for key, _ in SECTIONS]
-    current_key = st.session_state.get("active_section", keys[0])
-    current_idx = keys.index(current_key) if current_key in keys else 0
-    choice_label = st.radio(
-        "Section", labels, index=current_idx, key="active_section_radio", label_visibility="collapsed"
-    )
-    st.session_state.active_section = keys[labels.index(choice_label)]
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1081,11 +1047,34 @@ if st.session_state.get("_pending_model") is not None:
     st.session_state.yaml_editor = ob.to_yaml(st.session_state.model)
 
 # ---------------------------------------------------------------------------
-# Sidebar: sample data + templates + reset (utility actions only --
-# model name/description and section navigation live in the left pane)
+# Sidebar: model settings, section navigation, sample data, templates, reset
+# -- everything you configure/navigate with lives in one collapsible place.
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
+    st.header("\u2699\ufe0f Model settings")
+    st.text_input("Model name", value="account_position_model", key="model_name_input")
+    st.text_area(
+        "Model description",
+        value="Investment account and position semantic model covering client, "
+        "account, security, and calendar dimensions with a daily position fact.",
+        height=90,
+        key="model_description_input",
+    )
+
+    st.divider()
+    st.header("\U0001f4cb Sections")
+    _section_labels = [label for _, label in SECTIONS]
+    _section_keys = [key for key, _ in SECTIONS]
+    _current_section_key = st.session_state.get("active_section", _section_keys[0])
+    _current_section_idx = _section_keys.index(_current_section_key) if _current_section_key in _section_keys else 0
+    _choice_label = st.radio(
+        "Section", _section_labels, index=_current_section_idx, key="active_section_radio",
+        label_visibility="collapsed",
+    )
+    st.session_state.active_section = _section_keys[_section_labels.index(_choice_label)]
+
+    st.divider()
     st.header("\U0001f9ea Try it with sample data")
     st.caption(
         "Loads a ready-made **Account / Position** investment data model "
@@ -1139,8 +1128,8 @@ st.markdown(
     """
 <div class="ossie-hero">
   <h1>🧬 Apache Ossie Semantic Model Builder</h1>
-  <p>Pick a section on the left -- <b>Base Model</b>, <b>Enrich Base Model</b>, <b>BI
-  Conversions</b>, or <b>AI Agent Invocation</b> -- and its details appear in the middle.
+  <p>Pick a section in the sidebar -- <b>Base Model</b>, <b>Enrich Base Model</b>, <b>BI
+  Conversions</b>, or <b>AI Agent Invocation</b> -- and its details appear on the left.
   The <b>Ossie</b> panel on the right always shows the current YAML, live, with a
   <code>\u00ab</code>/<code>\u00bb</code> toggle to expand it to full screen.</p>
 </div>
@@ -1149,16 +1138,14 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------------------
-# 3-pane layout: left (settings + nav) | center (active section) | right (Ossie YAML)
+# Layout: center (active section) | right (Ossie YAML). Model settings and
+# section navigation live in the sidebar (collapsible for more screen room).
 # ---------------------------------------------------------------------------
 
 if st.session_state.yaml_fullscreen:
     _render_yaml_panel(height=1300, fullscreen=True)
 else:
-    left_col, center_col, yaml_col = st.columns([0.9, 2.2, 1.6], gap="large")
-
-    with left_col:
-        _render_left_pane()
+    center_col, yaml_col = st.columns([1.7, 1], gap="large")
 
     with center_col:
         active_section = st.session_state.active_section
