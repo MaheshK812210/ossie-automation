@@ -658,12 +658,13 @@ def _render_registry_section():
                 # directly here -- those widgets were already instantiated
                 # earlier in this run. Stash and apply them on the rerun.
                 st.session_state["_pending_model"] = parsed
-                loaded_name = None
-                sm_entries = parsed.get("semantic_model") or []
-                if sm_entries and sm_entries[0].get("name"):
-                    loaded_name = sm_entries[0]["name"]
-                if loaded_name:
-                    st.session_state["_pending_model_name"] = loaded_name
+                # Reflect the name of the file the user actually picked in
+                # the dropdown -- NOT whatever "name" happens to be baked
+                # into the YAML body, which can drift out of sync with the
+                # registry filename if the sidebar's Model name field was
+                # edited after generating but before saving. `chosen` is
+                # always non-empty here (it came from the dropdown itself).
+                st.session_state["_pending_model_name"] = chosen
                 st.session_state.registry_message = ("success", f"\u2705 Loaded '{chosen}' from `{registry_dir}/`.")
                 st.rerun()
 

@@ -195,8 +195,10 @@ by default, overridable -- see below) via the GitHub Contents API
 - **Load** shows a dropdown of every model currently saved in that
   section's directory; pick one and click **Load selected model** to pull
   it into the YAML panel (you can then edit and save it back).
-- **Loading updates the sidebar's Model name field too** -- it's set to the
-  loaded model's own `name`, so a subsequent **Save** by default overwrites
+- **Loading updates the sidebar's Model name field too** -- it's set to
+  match the file you picked in the dropdown (not whatever `name` happens
+  to be written inside the YAML body, which can drift out of sync with
+  the registry filename), so a subsequent **Save** by default overwrites
   the same file you just loaded rather than a stale name you'd typed
   earlier.
 - **Editing after a load is always possible**: you can edit the YAML
