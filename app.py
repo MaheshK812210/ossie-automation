@@ -134,17 +134,21 @@ def _build_theme_css(dark: bool) -> str:
 
     return f"""
 <style>
-/* Hide Streamlit's default top header bar (hamburger menu, Deploy button,
-   status widget) -- not useful for this app and just wastes vertical space. */
+/* Hide Streamlit's own hamburger menu, Deploy button, and running-status
+   widget -- not useful for this app. Deliberately does NOT hide the
+   header/toolbar container itself: that same container is also where the
+   sidebar's own "\u00bb" re-expand button (stExpandSidebarButton) lives
+   once the sidebar is collapsed, so hiding the whole thing would strand
+   users with no way to bring the sidebar back. */
 header[data-testid="stHeader"] {{
-    display: none;
+    background: transparent;
+    box-shadow: none;
 }}
-div[data-testid="stToolbar"], #MainMenu {{
-    display: none;
+div[data-testid="stToolbar"] {{
+    background: transparent;
 }}
-/* Reclaim the vertical space the (now-hidden) header used to reserve. */
-div[data-testid="stMainBlockContainer"], div[data-testid="stSidebarUserContent"] {{
-    padding-top: 1.5rem;
+[data-testid="stMainMenu"], [data-testid="stAppDeployButton"], [data-testid="stStatusWidget"] {{
+    display: none;
 }}
 .stApp {{
     background: {app_bg};
