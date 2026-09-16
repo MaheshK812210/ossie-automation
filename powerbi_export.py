@@ -431,9 +431,33 @@ def _tmdl_relationships_content(relationships: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _tmdl_database_content(tmsl: Dict[str, Any]) -> str:
+    """The ``database.tmdl`` file -- REQUIRED for every TMDL semantic
+    model, and must be the file that carries ``compatibilityLevel``: a
+    bare ``compatibilityLevel:`` property with no enclosing ``database``
+    object declaration is invalid TMDL (Power BI Desktop rejects it,
+    historically surfacing as a generic ``InvalidLineType`` /
+    "unexpected line type" parse error rather than a specific "missing
+    database.tmdl" message).
+    """
+    return "\n".join(
+        [
+            "database",
+            f"\tcompatibilityLevel: {tmsl['compatibilityLevel']}",
+            "",
+        ]
+    )
+
+
 def _tmdl_model_content(tmsl: Dict[str, Any]) -> str:
     m = tmsl["model"]
-    lines = [f"model {tmsl['name']}", f"\tculture: {m.get('culture', 'en-US')}", ""]
+    lines = [
+        f"model {tmsl['name']}",
+        f"\tculture: {m.get('culture', 'en-US')}",
+        f"\tdefaultPowerBIDataSourceVersion: {m.get('defaultPowerBIDataSourceVersion', 'powerBI_V3')}",
+        f"\tsourceQueryCulture: {m.get('sourceQueryCulture', 'en-US')}",
+        "",
+    ]
     for t in m["tables"]:
         lines.append(f"ref table {t['name']}")
     if m.get("relationships"):
@@ -446,9 +470,15 @@ def _tmdl_model_content(tmsl: Dict[str, Any]) -> str:
 def build_tmdl_files(ossie_model: Dict[str, Any], data_source: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
     """Returns ``{relative_path: file_text}`` for a TMDL semantic model
     definition (the format behind modern Power BI Projects / Fabric
-    git-integrated semantic models)."""
+    git-integrated semantic models). Includes the required
+    ``database.tmdl`` (carrying ``compatibilityLevel``) alongside
+    ``model.tmdl``, one file per table, and ``relationships.tmdl``.
+    """
     tmsl = build_tmsl_model(ossie_model, data_source=data_source)
-    files = {"definition/model.tmdl": _tmdl_model_content(tmsl)}
+    files = {
+        "definition/database.tmdl": _tmdl_database_content(tmsl),
+        "definition/model.tmdl": _tmdl_model_content(tmsl),
+    }
     for t in tmsl["model"]["tables"]:
         files[f"definition/tables/{t['name']}.tmdl"] = _tmdl_table_content(t)
     if tmsl["model"].get("relationships"):

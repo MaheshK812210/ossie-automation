@@ -189,6 +189,24 @@ def test_tmsl_to_json_roundtrips(account_position_model):
     assert json.loads(text) == tmsl
 
 
+def test_build_tmdl_files_includes_required_database_file(account_position_model):
+    """database.tmdl is REQUIRED for every TMDL semantic model and must
+    carry compatibilityLevel -- a bare compatibilityLevel: property with
+    no enclosing `database` declaration (or a missing database.tmdl file
+    altogether) is invalid TMDL that Power BI Desktop rejects on open."""
+    files = pbe.build_tmdl_files(account_position_model)
+    assert "definition/database.tmdl" in files
+
+    db_tmdl = files["definition/database.tmdl"]
+    lines = [l for l in db_tmdl.splitlines() if l]
+    assert lines[0] == "database"
+    assert lines[1] == "\tcompatibilityLevel: 1567"
+
+    model_tmdl = files["definition/model.tmdl"]
+    assert "defaultPowerBIDataSourceVersion: powerBI_V3" in model_tmdl
+    assert "sourceQueryCulture: en-US" in model_tmdl
+
+
 def test_build_tmdl_files(account_position_model):
     files = pbe.build_tmdl_files(account_position_model)
     assert "definition/model.tmdl" in files
@@ -242,6 +260,7 @@ def test_build_pbip_zip_contains_expected_files(account_position_model):
     root = "account_position_model.SemanticModel"
     assert f"{root}/.platform" in names
     assert f"{root}/definition.pbism" in names
+    assert f"{root}/definition/database.tmdl" in names
     assert f"{root}/definition/model.tmdl" in names
     assert f"{root}/definition/tables/FACT_POSITION.tmdl" in names
     assert f"{root}/model.bim" in names
