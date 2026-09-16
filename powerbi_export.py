@@ -82,16 +82,17 @@ def physical_source_column(field: Dict[str, Any]) -> str:
     """Return the Power Query / warehouse column name to bind as Tabular
     ``sourceColumn``.
 
-    Prefers ``description_from_source_system`` from the field's COMMON
-    ``custom_extensions`` when present -- in this app's metadata spreadsheet
-    that column holds the *physical* source-system column name (e.g.
-    ``CLNT_SK``) while ``Column Title`` / Ossie ``fields[].name`` is the
-    logical catalog name (e.g. ``CLIENT_ID``). Power BI Import mode maps
-    query columns by exact ``sourceColumn`` match; binding the logical name
-    when Snowflake returns the physical name yields zero matched columns and
-    Desktop's "This query doesn't have any columns with supported data
-    types" load error. Falls back to the Ossie field name when no physical
-    name is recorded.
+    Prefers ``source_column_name`` from the field's COMMON
+    ``custom_extensions`` when present -- that comes from the optional
+    metadata spreadsheet column **Source Column Name** (the physical
+    Snowflake/warehouse column, e.g. ``CLNT_SK``) while ``Column Title`` /
+    Ossie ``fields[].name`` stays the logical catalog name (e.g.
+    ``CLIENT_ID``). Power BI Import mode maps query columns by exact
+    ``sourceColumn`` match; if logical and physical names differ and only
+    the logical name is bound, Refresh can fail with "no columns with
+    supported data types". Falls back to the Ossie field name when no
+    physical name is recorded. Does **not** use
+    ``description_from_source_system`` -- that field is descriptive text.
     """
     for ext in field.get("custom_extensions") or []:
         if ext.get("vendor_name") != "COMMON":
@@ -101,7 +102,7 @@ def physical_source_column(field: Dict[str, Any]) -> str:
             data = json.loads(raw) if isinstance(raw, str) else (raw or {})
         except (TypeError, json.JSONDecodeError):
             data = {}
-        physical = (data.get("description_from_source_system") or "").strip()
+        physical = (data.get("source_column_name") or "").strip()
         if physical:
             return physical
     return field["name"]

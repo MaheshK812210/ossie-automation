@@ -318,7 +318,8 @@ headers (case/spacing-insensitive) are used:
 | `Assest Type` | e.g. `Fact Table`, `Dimension Table`, `View` |
 | `Column Title` | Column name |
 | `Description` | Business-friendly description |
-| `Description from source system` | Physical source-system column name when it differs from `Column Title` (e.g. `CLNT_SK` vs logical `CLIENT_ID`). Stored on the Ossie field and used as Power BI's `sourceColumn` so Refresh can bind Snowflake columns; if blank, `Column Title` is used for both. |
+| `Description from source system` | Description as documented by the source system (free text -- not used as a Power BI column binding) |
+| `Source Column Name` | Optional. Physical warehouse/Snowflake column name when it differs from `Column Title` (e.g. `CLNT_SK` vs logical `CLIENT_ID`). Used as Power BI's `sourceColumn` on export; if blank, `Column Title` is used for both. Aliases: `Source Column`, `Physical Column Name`. |
 | `size` | Column length/precision (e.g. `200`, `18,2`) |
 | `Technical Data Type` | Physical/DB data type (e.g. `VARCHAR2(200)`, `NUMBER(18,2)`) |
 | `Column Position` | Ordinal position of the column in the table |
@@ -405,7 +406,7 @@ standard Ossie `custom_extensions` block instead of being dropped:
 | `Column Title` | `datasets[].fields[].name` |
 | `Description` | `datasets[].fields[].description` |
 | `Technical Data Type` | best-effort mapped to `datasets[].fields[].datatype` enum (`String`, `Integer`, `Decimal`, `Float`, `Boolean`, `Date`, `Time`, `DateTime`, `DateTimeTz`, `Opaque`) **and** kept verbatim in `custom_extensions` |
-| `size`, `Column Position`, `Is nullable`, `Contains PII`, `Description from source system` | `datasets[].fields[].custom_extensions` (`vendor_name: COMMON`) |
+| `size`, `Column Position`, `Is nullable`, `Contains PII`, `Description from source system`, `Source Column Name` | `datasets[].fields[].custom_extensions` (`vendor_name: COMMON`) |
 | `Is Primary Key` + `Primary Key` label | `datasets[].primary_key` (grouped into a single composite key per table) |
 | `Assest Type`, PII column roll-up | `datasets[].custom_extensions` (`vendor_name: COMMON`) |
 | File 2 `Metric` rows (+ their own `Dialect`) | native `semantic_model[].metrics[]`, each with its own `expression.dialects[].dialect` |

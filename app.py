@@ -715,7 +715,8 @@ def _render_base_model_section():
         st.markdown(f"**\u2460 Table & column metadata** `{metadata_req_tag}`")
         st.caption(
             "One row per column: Name (optionally qualified, e.g. `DB.SCHEMA.TABLE`), Assest "
-            "Type, Column Title, Description, Description from source system, size, Technical "
+            "Type, Column Title, Description, Description from source system, Source Column "
+            "Name, size, Technical "
             "Data Type, Column Position, Is Primary Key, Is nullable, Contains PII, Primary Key."
         )
         metadata_upload = st.file_uploader(
@@ -1284,7 +1285,8 @@ column references).
 - **Name** (optionally `DB.SCHEMA.TABLE`) &rarr; dataset name (last
   segment) + `source` (verbatim)
 - **Column Title** &rarr; field name &middot; **Description** &rarr; field `description`
-- **Description from source system**, **size**, **Technical Data Type**,
+- **Description from source system**, **Source Column Name** (optional physical
+  Snowflake column for Power BI binding), **size**, **Technical Data Type**,
   **Column Position**, **Is nullable**, **Contains PII** &rarr; field
   `custom_extensions` (vendor `COMMON`)
 - **Technical Data Type** is also best-effort mapped to the Ossie

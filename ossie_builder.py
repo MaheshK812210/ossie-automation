@@ -82,6 +82,10 @@ _METADATA_ALIASES = {
     "column_name": "column_name",
     "description": "description",
     "description_from_source_system": "source_description",
+    "source_column_name": "source_column_name",
+    "source_column": "source_column_name",
+    "physical_column_name": "source_column_name",
+    "physical_column": "source_column_name",
     "size": "size",
     "technical_data_type": "technical_data_type",
     "column_position": "column_position",
@@ -309,6 +313,7 @@ class ColumnMeta:
     column_name: str
     description: str = ""
     source_description: str = ""
+    source_column_name: str = ""
     size: str = ""
     technical_data_type: str = ""
     column_position: Optional[int] = None
@@ -375,6 +380,7 @@ def parse_metadata(df: pd.DataFrame) -> "Dict[str, TableMeta]":
             column_name=column_name,
             description=clean_str(row.get("description")),
             source_description=clean_str(row.get("source_description")),
+            source_column_name=clean_str(row.get("source_column_name")),
             size=clean_str(row.get("size")),
             technical_data_type=clean_str(row.get("technical_data_type")),
             column_position=to_int(row.get("column_position")),
@@ -659,6 +665,8 @@ def build_field(
     extension_data["contains_pii"] = col.contains_pii
     if col.source_description:
         extension_data["description_from_source_system"] = col.source_description
+    if col.source_column_name:
+        extension_data["source_column_name"] = col.source_column_name
     if col.primary_key_name:
         extension_data["primary_key_name"] = col.primary_key_name
 

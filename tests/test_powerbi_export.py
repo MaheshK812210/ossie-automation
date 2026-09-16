@@ -142,17 +142,38 @@ def test_build_tmsl_model_defaults_to_placeholder_source_without_data_source(acc
     assert "Snowflake" not in m_expr
 
 
-def test_physical_source_column_prefers_description_from_source_system():
+def test_physical_source_column_prefers_source_column_name():
     field = {
         "name": "CLIENT_ID",
         "custom_extensions": [
             {
                 "vendor_name": "COMMON",
-                "data": json.dumps({"description_from_source_system": "CLNT_SK"}),
+                "data": json.dumps(
+                    {
+                        "description_from_source_system": "Documented in warehouse as CLNT_SK.",
+                        "source_column_name": "CLNT_SK",
+                    }
+                ),
             }
         ],
     }
     assert pbe.physical_source_column(field) == "CLNT_SK"
+
+
+def test_physical_source_column_ignores_description_from_source_system():
+    """Description-from-source is free text, not a physical column name."""
+    field = {
+        "name": "CLIENT_ID",
+        "custom_extensions": [
+            {
+                "vendor_name": "COMMON",
+                "data": json.dumps(
+                    {"description_from_source_system": "Documented in warehouse as CLNT_SK."}
+                ),
+            }
+        ],
+    }
+    assert pbe.physical_source_column(field) == "CLIENT_ID"
 
 
 def test_physical_source_column_falls_back_to_field_name():
@@ -169,17 +190,15 @@ def test_physical_source_column_falls_back_to_field_name():
 
 
 def test_build_tmsl_binds_source_column_to_physical_name(account_position_model):
-    """Sample metadata uses logical Column Title CLIENT_ID but physical
-    Description-from-source-system CLNT_SK. Power BI must bind sourceColumn
-    to the physical name or Refresh fails with 'no columns with supported
-    data types' even when Snowflake.Databases M is correct."""
+    """Sample metadata sets Source Column Name (e.g. CLNT_SK) separately from
+    logical Column Title (CLIENT_ID). Power BI must bind sourceColumn to that
+    physical name when present."""
     tmsl = pbe.build_tmsl_model(account_position_model)
     client = next(t for t in tmsl["model"]["tables"] if t["name"] == "DIM_CLIENT")
     by_name = {c["name"]: c["sourceColumn"] for c in client["columns"]}
     assert by_name["CLIENT_ID"] == "CLNT_SK"
     assert by_name["CLIENT_NAME"] == "CLNT_NM"
     assert by_name["CLIENT_TYPE"] == "CLNT_TYP_CD"
-    # Logical name stays on the Tabular column for the Fields pane / DAX.
     assert {c["name"] for c in client["columns"]} >= {"CLIENT_ID", "CLIENT_NAME"}
 
 
