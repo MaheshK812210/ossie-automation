@@ -338,7 +338,7 @@ One sheet, one row per item, discriminated by a **`Type`** column:
 | `Table Name` | Synonym, Custom Extension | Table the row applies to |
 | `Column Name` | Synonym, Custom Extension | Column the row applies to (leave blank on a Custom Extension row for a **table-level** extension) |
 | `Metric Name` | Metric | Unique metric identifier |
-| `Metric Expression` | Metric | Aggregate SQL expression, e.g. `SUM(FACT_POSITION.MARKET_VALUE)` |
+| `Metric Expression` | Metric | Aggregate SQL expression. Prefer `SUM(FACT_POSITION.MARKET_VALUE)` (table + **Column Title**). Bare `SUM(MARKET_VALUE)` and physical names from **Source Column Name** are rewritten to DAX `SUM(FACT_POSITION[MARKET_VALUE])` when the column is in the metadata. Power BI measures require `Table[Column]` references -- unqualified SQL without a resolvable column stays invalid DAX. |
 | `Metric Description` | Metric | What the metric measures |
 | `Metric Data Type` | Metric | `String`/`Integer`/`Decimal`/`Float`/`Boolean`/`Date`/`Time`/`DateTime`/`DateTimeTz`/`Opaque` |
 | `Dialect` | Metric | SQL dialect of `Metric Expression`: one of `ANSI_SQL`, `SNOWFLAKE`, `MDX`, `TABLEAU`, `DATABRICKS`, `MAQL`, `BIGQUERY`, `THOUGHTSPOT`. Optional; defaults to (and falls back on any unrecognized value to) `ANSI_SQL`, with a warning. This is the **only** place a dialect is set anywhere in the app -- it's per-metric, not global. Field expressions are always `ANSI_SQL` (they're just plain column references). |
