@@ -66,12 +66,14 @@ Upload up to three files (only the first is required):
 3. **Relationships** (optional)
 
 Click **Generate base YAML**. The app parses the files, builds an
-Ossie-compliant semantic model, validates it against the official
-[`ossie-schema.json`](schema/ossie-schema.json), and shows it in the
-**Ossie** panel on the right in an **editable text area** -- make any
-manual tweaks you want, click **Apply edits**, and it re-validates and
-locks in your changes. Download the YAML at this point, or continue to
-the Enrich section.
+Ossie-compliant semantic model, and shows it in the **Ossie** panel on
+the right in an **editable text area** -- make any manual tweaks you
+want and click **Apply edits** to lock them in. Click **🔍 Validate
+YAML** any time to check the current editor contents against the
+official [`ossie-schema.json`](schema/ossie-schema.json) on demand (it
+validates whatever's currently typed, whether or not you've clicked
+Apply edits yet). Download the YAML at this point, or continue to the
+Enrich section.
 
 ### Enrich Base Model -- add AI context (optional, later)
 
@@ -214,8 +216,8 @@ as a clearly-labeled "not built yet" option):
 
 A placeholder section for a future AI agent integration (e.g. answering
 natural-language questions using the current model's metrics,
-relationships, and `ai_context`). It shows a disabled input/button once a
-base YAML exists; the actual agent invocation code is not implemented yet.
+relationships, and `ai_context`). It shows a disabled input once a base
+YAML exists; the actual agent invocation code is not implemented yet.
 
 ## Model registry (save/load to a git repo)
 

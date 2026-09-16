@@ -280,15 +280,13 @@ def _dataset_field_counts(model: Dict[str, Any]):
     return n_datasets, n_fields, n_rels, n_metrics
 
 
-def _show_validation(model: Dict[str, Any]) -> List[str]:
-    errors = ob.validate_model(model, SCHEMA_PATH)
+def _show_validation(errors: List[str]) -> None:
     if errors:
         st.error("This YAML does NOT pass validation against the Ossie JSON Schema:")
         for err in errors:
             st.code(err, language="text")
     else:
-        st.success("✅ Valid against the Apache Ossie core-spec JSON Schema.")
-    return errors
+        st.success("\u2705 Valid against the Apache Ossie core-spec JSON Schema.")
 
 
 def _asset_icon(asset_type: str) -> str:
@@ -534,10 +532,12 @@ def _render_yaml_panel(height: int, fullscreen: bool):
 
         st.text_area("Ossie YAML", key="yaml_editor", height=height, label_visibility="collapsed")
 
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         with c1:
             apply_edits = st.button("\u2705 Apply edits", use_container_width=True)
         with c2:
+            validate_clicked = st.button("\U0001f50d Validate YAML", use_container_width=True)
+        with c3:
             st.download_button(
                 label="\U0001f4be Download YAML",
                 data=st.session_state.yaml_editor,
@@ -552,11 +552,20 @@ def _render_yaml_panel(height: int, fullscreen: bool):
             try:
                 parsed = ob.parse_yaml_text(st.session_state.yaml_editor)
                 st.session_state.model = parsed
+                st.session_state.validation_result = None
                 st.success("Edits applied.")
             except (yaml.YAMLError, ValueError) as e:
                 st.error(f"Could not parse your edits as valid YAML: {e}")
 
-        _show_validation(st.session_state.model)
+        if validate_clicked:
+            try:
+                candidate = ob.parse_yaml_text(st.session_state.yaml_editor)
+                st.session_state.validation_result = ob.validate_model(candidate, SCHEMA_PATH)
+            except (yaml.YAMLError, ValueError) as e:
+                st.session_state.validation_result = [f"Can't validate -- not parseable YAML: {e}"]
+
+        if st.session_state.validation_result is not None:
+            _show_validation(st.session_state.validation_result)
         _render_registry_section()
 
 
@@ -853,6 +862,7 @@ def _render_base_model_section():
 
             st.session_state.model = result.model
             st.session_state.yaml_editor = ob.to_yaml(result.model)
+            st.session_state.validation_result = None
             st.toast(toast_message, icon="\u2705")
             st.rerun()
 
@@ -1217,7 +1227,6 @@ def _render_ai_agent_section():
         disabled=True,
         key="ai_agent_placeholder_input",
     )
-    st.button("Invoke AI Agent", disabled=True, key="ai_agent_placeholder_button")
 
 
 # ---------------------------------------------------------------------------
@@ -1311,6 +1320,7 @@ st.session_state.setdefault("pbi_metric_preview", None)
 st.session_state.setdefault("fabric_deploy_result", None)
 st.session_state.setdefault("active_section", SECTIONS[0][0])
 st.session_state.setdefault("registry_message", None)
+st.session_state.setdefault("validation_result", None)
 
 # A widget's session_state value can only be set BEFORE that widget is
 # instantiated in a given script run. The Enrich section computes its
@@ -1321,6 +1331,7 @@ st.session_state.setdefault("registry_message", None)
 if st.session_state.get("_pending_model") is not None:
     st.session_state.model = st.session_state.pop("_pending_model")
     st.session_state.yaml_editor = ob.to_yaml(st.session_state.model)
+    st.session_state.validation_result = None
 
 # Same "can't touch a widget's state after it's instantiated" constraint
 # applies to the "Model name" sidebar field -- loading from the registry
@@ -1401,6 +1412,7 @@ with st.sidebar:
                 del st.session_state[k]
         st.session_state.model = None
         st.session_state.yaml_editor = ""
+        st.session_state.validation_result = None
         st.session_state.use_sample_base = False
         st.session_state.use_sample_ai_context = False
         st.session_state.pbi_export = None
