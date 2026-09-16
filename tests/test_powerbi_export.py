@@ -205,6 +205,36 @@ def test_build_tmdl_files(account_position_model):
     assert "toColumn: DIM_ACCOUNT.ACCOUNT_ID" in rel_tmdl
 
 
+def test_build_tmdl_files_use_tabs_only_no_mixed_indentation(account_position_model):
+    """TMDL is strictly indentation-sensitive: Power BI Desktop rejects a
+    file with mixed tabs/spaces in a line's leading whitespace with a
+    parse error ("Invalid indentation was detected"). The embedded
+    Power Query (M) partition source has its own human-readable 4-space
+    indentation, which must be stripped before being re-indented with
+    tabs -- this guards against that regressing.
+    """
+    files = pbe.build_tmdl_files(account_position_model)
+    for path, content in files.items():
+        for line in content.splitlines():
+            if not line:
+                continue
+            after_tabs = line.lstrip("\t")
+            assert not after_tabs.startswith(" "), (
+                f"{path}: mixed tab/space indentation on line: {line!r}"
+            )
+
+    # The M source lines specifically must have landed at exactly the
+    # expected tab depth (3 tabs: table > partition > source line), with
+    # no leftover internal spaces from the M expression's own formatting.
+    fact_tmdl = files["definition/tables/FACT_POSITION.tmdl"]
+    assert "\t\t\tlet" in fact_tmdl
+    assert "\t\t\t    " not in fact_tmdl
+
+
+def test_tmdl_comment_line_collapses_embedded_newlines():
+    assert pbe._tmdl_comment_line("line one\nline two\n  line three  ") == "line one line two line three"
+
+
 def test_build_pbip_zip_contains_expected_files(account_position_model):
     zb = pbe.build_pbip_zip_bytes(account_position_model, "account_position_model")
     zf = zipfile.ZipFile(io.BytesIO(zb))

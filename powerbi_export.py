@@ -379,6 +379,13 @@ def tmsl_to_json_str(tmsl: Dict[str, Any]) -> str:
 # TMDL (folder-based Power BI Project) builder
 # ---------------------------------------------------------------------------
 
+def _tmdl_comment_line(text: str) -> str:
+    """A single-line ``///`` doc-comment -- TMDL comments don't span
+    multiple lines, so any embedded newlines (e.g. from a multi-paragraph
+    description typed into a spreadsheet cell) are collapsed first."""
+    return " ".join(text.split())
+
+
 def _tmdl_table_content(table: Dict[str, Any]) -> str:
     lines = [f"table {table['name']}", ""]
     for col in table["columns"]:
@@ -386,21 +393,30 @@ def _tmdl_table_content(table: Dict[str, Any]) -> str:
         lines.append(f"\t\tdataType: {col['dataType']}")
         lines.append(f"\t\tsourceColumn: {col['sourceColumn']}")
         if col.get("description"):
-            lines.append(f"\t\t/// {col['description']}")
+            lines.append(f"\t\t/// {_tmdl_comment_line(col['description'])}")
         lines.append("")
     for measure in table.get("measures", []):
         lines.append(f"\tmeasure {measure['name']} = {measure['expression']}")
         if measure.get("formatString"):
             lines.append(f"\t\tformatString: {measure['formatString']}")
         if measure.get("description"):
-            lines.append(f"\t\t/// {measure['description']}")
+            lines.append(f"\t\t/// {_tmdl_comment_line(measure['description'])}")
         lines.append("")
     for partition in table.get("partitions", []):
         lines.append(f"\tpartition {partition['name']} = m")
         lines.append(f"\t\tmode: {partition['mode']}")
         lines.append("\t\tsource =")
+        # TMDL is strictly indentation-sensitive (tabs, one level per
+        # nesting depth) and rejects mixed tabs/spaces with a parse error
+        # ("Invalid indentation was detected") in Power BI Desktop. The M
+        # expression text below has its own human-readable 4-space
+        # indentation (see build_m_expression/build_snowflake_m_expression)
+        # which is meaningless to the M language itself -- strip it before
+        # re-indenting with tabs so every embedded line gets exactly one
+        # consistent (tab-only) indentation, not tabs-then-leftover-spaces.
         for m_line in partition["source"]["expression"].splitlines():
-            lines.append(f"\t\t\t{m_line}")
+            stripped = m_line.strip()
+            lines.append(f"\t\t\t{stripped}" if stripped else "")
         lines.append("")
     return "\n".join(lines)
 
