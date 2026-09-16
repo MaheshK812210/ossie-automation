@@ -318,7 +318,7 @@ headers (case/spacing-insensitive) are used:
 | `Assest Type` | e.g. `Fact Table`, `Dimension Table`, `View` |
 | `Column Title` | Column name |
 | `Description` | Business-friendly description |
-| `Description from source system` | Description as documented by the source system |
+| `Description from source system` | Physical source-system column name when it differs from `Column Title` (e.g. `CLNT_SK` vs logical `CLIENT_ID`). Stored on the Ossie field and used as Power BI's `sourceColumn` so Refresh can bind Snowflake columns; if blank, `Column Title` is used for both. |
 | `size` | Column length/precision (e.g. `200`, `18,2`) |
 | `Technical Data Type` | Physical/DB data type (e.g. `VARCHAR2(200)`, `NUMBER(18,2)`) |
 | `Column Position` | Ordinal position of the column in the table |

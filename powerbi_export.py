@@ -78,6 +78,35 @@ def map_datatype_to_tabular(ossie_datatype: Optional[str]) -> str:
     return _TABULAR_DATATYPE.get(ossie_datatype or "", "string")
 
 
+def physical_source_column(field: Dict[str, Any]) -> str:
+    """Return the Power Query / warehouse column name to bind as Tabular
+    ``sourceColumn``.
+
+    Prefers ``description_from_source_system`` from the field's COMMON
+    ``custom_extensions`` when present -- in this app's metadata spreadsheet
+    that column holds the *physical* source-system column name (e.g.
+    ``CLNT_SK``) while ``Column Title`` / Ossie ``fields[].name`` is the
+    logical catalog name (e.g. ``CLIENT_ID``). Power BI Import mode maps
+    query columns by exact ``sourceColumn`` match; binding the logical name
+    when Snowflake returns the physical name yields zero matched columns and
+    Desktop's "This query doesn't have any columns with supported data
+    types" load error. Falls back to the Ossie field name when no physical
+    name is recorded.
+    """
+    for ext in field.get("custom_extensions") or []:
+        if ext.get("vendor_name") != "COMMON":
+            continue
+        raw = ext.get("data") or "{}"
+        try:
+            data = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        except (TypeError, json.JSONDecodeError):
+            data = {}
+        physical = (data.get("description_from_source_system") or "").strip()
+        if physical:
+            return physical
+    return field["name"]
+
+
 def _guess_format_string(ossie_datatype: Optional[str]) -> str:
     if ossie_datatype in ("Decimal", "Float"):
         return "#,##0.00"
@@ -283,7 +312,7 @@ def build_tmsl_model(
             col: Dict[str, Any] = {
                 "name": field["name"],
                 "dataType": map_datatype_to_tabular(field.get("datatype")),
-                "sourceColumn": field["name"],
+                "sourceColumn": physical_source_column(field),
             }
             if field.get("description"):
                 col["description"] = field["description"]
