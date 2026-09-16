@@ -91,13 +91,22 @@ Two options are shown; only **Power BI** is implemented (Tableau appears
 as a clearly-labeled "not built yet" option):
 
 - **Power BI**: generates a real **TMSL** (`model.bim`) document and a
-  **TMDL**-based Power BI Project folder (the same text-based format behind
-  modern `.pbip` projects and Fabric's git-integrated semantic models).
-  - Download it as a ready-to-use `.zip` -- open the folder directly in
-    Power BI Desktop via *File \u2192 Open \u2192 Power BI Project*, commit it to
-    git for Fabric's git integration, or deploy it headlessly with the
-    Tabular Editor CLI / Fabric REST API. None of that requires generating
-    it from a desktop app.
+  **TMDL**-based `<name>.SemanticModel` folder (the same text-based format
+  behind Fabric's git-integrated semantic models).
+  - Download it as a ready-to-use `.zip`. **Important:** this is a
+    *semantic-model-only* export (no paired Report), so Power BI Desktop's
+    *File \u2192 Open \u2192 Power BI Project* will **not** open it directly --
+    that command specifically expects a matching `.Report` folder alongside
+    the `.SemanticModel` one, which this app doesn't generate (there's no
+    way to verify a hand-built Report artifact opens correctly without a
+    real Power BI Desktop to test against, so we don't guess at one).
+  - What **does** work, with no Fabric/Premium workspace required: commit
+    the folder to git for Fabric's git integration, or deploy it headlessly
+    via the Fabric REST API (see **Deploy to Fabric** below), or -- the
+    most common path if Power BI Desktop is your target -- open
+    `model.bim` in **[Tabular Editor](https://tabulareditor.com/)** (free:
+    Tabular Editor 2) and deploy it from there. See "Getting this into
+    Power BI Desktop with Tabular Editor" below for the exact steps.
   - Ossie `datasets`/`fields` become Tabular `tables`/`columns`; Ossie
     `relationships` become Tabular relationships (many-to-one, matching
     Ossie's own semantics); Ossie `metrics` become DAX `measures` via a
@@ -121,16 +130,12 @@ as a clearly-labeled "not built yet" option):
     field, which is inferred from the metadata file's qualified `Name`
     column (e.g. `MY_DB.PUBLIC.MY_TABLE` -- see "Table & column metadata"
     below). **No credentials are entered or stored anywhere in the app or
-    the exported files** -- open the downloaded `.SemanticModel` folder as
-    a Power BI Project in Power BI Desktop and hit Refresh; Power BI's
-    Snowflake connector will prompt you for sign-in (username/password,
-    SSO, or key-pair) at that point, exactly as it would for any other
-    Snowflake-backed report.
-  - **Two ways to get the model into Power BI/Fabric** -- both are kept
-    available side by side:
-    1. **Power BI Desktop** (`⬇️ Download Power BI Project (.zip)`):
-       unzip it and open the `.SemanticModel` folder via *File \u2192 Open
-       \u2192 Power BI Project*. Familiar, works everywhere Desktop runs.
+    the exported files** -- Power BI's Snowflake connector prompts for
+    sign-in (username/password, SSO, or key-pair) itself, the first time
+    the deployed model connects or refreshes.
+  - **Three ways to get the model into Power BI/Fabric**:
+    1. **Tabular Editor \u2192 Power BI Desktop** (works everywhere, no
+       Fabric/Premium needed) -- see the dedicated section below.
     2. **Deploy to Fabric** (the `\U0001f6f0\ufe0f Deploy to Fabric` sub-tab,
        fully headless, no desktop app at all): calls the real
        [Fabric REST API](https://learn.microsoft.com/en-us/rest/api/fabric/semanticmodel/items/create-semantic-model)
@@ -152,10 +157,46 @@ as a clearly-labeled "not built yet" option):
          established tenants, not brand-new ones), or spin up a
          pay-as-you-go F2 capacity in Azure (~$0.35/hour, pausable) purely
          for deployment.
-       - **No Fabric workspace or token handy?** Commit the downloaded
-         `.SemanticModel` folder to a git repo connected to a Fabric
-         workspace's **git integration** instead -- `git push` alone syncs
-         it, with no API call and no desktop app either.
+    3. **Git integration**: commit the downloaded `.SemanticModel` folder
+       to a git repo connected to a Fabric workspace's **git integration**
+       -- `git push` alone syncs it, with no API call and no desktop app.
+
+  #### Getting this into Power BI Desktop with Tabular Editor
+
+  Power BI Desktop has no built-in "import a `model.bim`" command, and
+  this export deliberately doesn't try to fake a full Power BI Project
+  (a real one also needs a paired `.Report` folder, which can't be
+  generated reliably or verified without a real Power BI Desktop to test
+  against). [Tabular Editor](https://tabulareditor.com/) (free: version 2)
+  is the standard, reliable way around that:
+
+  1. In Power BI Desktop, create a **blank report** (*File \u2192 New*) and
+     leave it empty -- don't add any data. Keep it open; while it's open,
+     Desktop runs a private local Analysis Services instance in the
+     background that Tabular Editor can target.
+  2. In Tabular Editor: *File \u2192 Open \u2192 From File...* and pick the
+     `model.bim` from the downloaded `.SemanticModel` folder.
+  3. Optional but recommended: review each table's Power Query (M)
+     partition source (`Table \u2192 Partitions`) before deploying -- it's a
+     real `Snowflake.Databases(...)` expression if you configured Snowflake
+     above, otherwise a generic placeholder you'll want to point at your
+     real source.
+  4. *File \u2192 Deploy...* and pick the blank Power BI Desktop file from
+     step 1 as the target (Tabular Editor lists locally running Desktop
+     instances by port). Deploying overwrites that blank model's schema
+     with everything from `model.bim` -- tables, columns, relationships,
+     and DAX measures.
+  5. Switch back to Power BI Desktop -- the Fields pane now shows your
+     tables. Build report visuals as normal, then **Save As** a regular
+     `.pbix`, which opens like any other Power BI file from then on.
+
+  If your organization has a **Premium / Premium Per User / Fabric**
+  workspace, you can skip Desktop entirely: Tabular Editor can deploy
+  `model.bim` **directly to that workspace's XMLA endpoint**
+  (*File \u2192 Deploy...* \u2192 paste
+  `powerbi://api.powerbi.com/v1.0/myorg/<workspace name>`) -- the same
+  underlying capability the **Deploy to Fabric** tab uses via the REST
+  API, just through Tabular Editor's UI instead.
 
 ### AI Agent Invocation (placeholder)
 

@@ -12,12 +12,14 @@ BI/Fabric semantic models are defined in under the hood:
   engine's deployment APIs.
 - **TMDL** (Tabular Model Definition Language) -- a folder of small, git
   friendly text files (``model.tmdl``, one file per table, a
-  ``relationships.tmdl``). This is the format behind modern Power BI
-  Projects (``.pbip``) and Fabric's git-integrated semantic models: you can
-  open the generated folder directly in Power BI Desktop via
-  *File > Open > Power BI Project*, or push it to a Fabric workspace with
-  the Fabric REST API / ``fab`` CLI / Tabular Editor's command line --
-  fully headless, no GUI required.
+  ``relationships.tmdl``). This is the format behind Fabric's
+  git-integrated semantic models: push the generated folder to a Fabric
+  workspace's connected git repo, or deploy it with the Fabric REST API /
+  ``fab`` CLI -- fully headless, no GUI required. It is a
+  *semantic-model-only* export (no paired ``.Report`` folder), so Power BI
+  Desktop's *File > Open > Power BI Project* won't open it directly --
+  load ``model.bim`` in Tabular Editor instead if Power BI Desktop is the
+  target (see the README).
 
 This module also includes a small, best-effort SQL -> DAX translator for
 field/metric expressions, and a synthetic-data + DuckDB based "run the
@@ -478,15 +480,37 @@ def build_semantic_model_project_files(
 
     readme = (
         f"# {safe_name} -- Power BI semantic model (generated from Apache Ossie)\n\n"
-        "This folder is a Fabric/Power BI \"semantic model as code\" project:\n\n"
-        "- Open it directly in Power BI Desktop via File > Open > Power BI Project.\n"
-        "- Or commit it to git and sync it into a Fabric workspace (git integration).\n"
-        "- Or deploy it headlessly with the Tabular Editor CLI or the Fabric REST API --\n"
-        "  no desktop application is required for that path.\n\n"
-        "`model.bim` contains the same model as plain TMSL JSON, for tools that prefer\n"
-        "a single JSON file over the TMDL folder layout.\n\n"
-        "Before deploying: review the placeholder Power Query (M) source expressions in\n"
-        "definition/tables/*.tmdl and point them at your real data source.\n"
+        "This folder is a Fabric/Power BI semantic-model-as-code project -- but it is\n"
+        "*semantic-model-only* (no paired .Report folder), so Power BI Desktop's own\n"
+        "File > Open > Power BI Project will NOT open it directly; that command\n"
+        "specifically expects a matching .Report folder alongside this .SemanticModel\n"
+        "one. Three ways to actually use this instead:\n\n"
+        "1. Tabular Editor -> Power BI Desktop (no Fabric/Premium workspace needed):\n"
+        "   a. In Power BI Desktop, create a blank report (File > New) and leave it\n"
+        "      empty. Keep it open -- it now hosts a private local Analysis Services\n"
+        "      instance in the background.\n"
+        "   b. In Tabular Editor (free: version 2, https://tabulareditor.com/):\n"
+        "      File > Open > From File... and pick model.bim from this folder.\n"
+        "   c. Review each table's Power Query (M) partition source (Table >\n"
+        "      Partitions) and point it at your real data source if it's still the\n"
+        "      generic placeholder.\n"
+        "   d. File > Deploy... and pick the blank Power BI Desktop file from step a\n"
+        "      as the target (Tabular Editor lists local Desktop instances by port).\n"
+        "      This overwrites the blank model's schema with everything here --\n"
+        "      tables, columns, relationships, and DAX measures.\n"
+        "   e. Back in Power BI Desktop, the Fields pane now shows your tables. Save\n"
+        "      As a regular .pbix -- it opens like any other Power BI file from then\n"
+        "      on.\n"
+        "   If your org has a Premium / Premium Per User / Fabric workspace, Tabular\n"
+        "   Editor can deploy model.bim directly to that workspace's XMLA endpoint\n"
+        "   instead (File > Deploy... -> powerbi://api.powerbi.com/v1.0/myorg/<workspace>),\n"
+        "   skipping Desktop entirely.\n"
+        "2. Commit this folder to a git repo connected to a Fabric workspace's git\n"
+        "   integration -- git push alone syncs it, no desktop app or API call needed.\n"
+        "3. Deploy headlessly via the Fabric REST API (see the app's \"Deploy to\n"
+        "   Fabric\" tab, or fabric_deploy.py) -- requires a Fabric-enabled workspace.\n\n"
+        "model.bim contains the same model as plain TMSL JSON, for tools (like Tabular\n"
+        "Editor) that prefer a single JSON file over the TMDL folder layout.\n"
     )
     files[f"{root}/README.md"] = readme.encode("utf-8")
 
