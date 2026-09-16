@@ -231,6 +231,62 @@ def test_build_pbip_zip_sanitizes_project_name(account_position_model):
     assert any(".SemanticModel/.platform" in n for n in names)
 
 
+def test_build_pbip_zip_is_a_directly_openable_project(account_position_model):
+    """The zip must be a genuine, thick Power BI Project -- a top-level
+    .pbip manifest plus a paired .Report folder bound to the
+    .SemanticModel folder -- not just the semantic model on its own."""
+    zb = pbe.build_pbip_zip_bytes(account_position_model, "account_position_model")
+    zf = zipfile.ZipFile(io.BytesIO(zb))
+    names = set(zf.namelist())
+
+    sm_root = "account_position_model.SemanticModel"
+    report_root = "account_position_model.Report"
+
+    assert "account_position_model.pbip" in names
+    assert f"{report_root}/.platform" in names
+    assert f"{report_root}/definition.pbir" in names
+    assert f"{report_root}/definition/version.json" in names
+    assert f"{report_root}/definition/report.json" in names
+    assert f"{report_root}/definition/pages/pages.json" in names
+    assert any(n.startswith(f"{report_root}/definition/pages/") and n.endswith("/page.json") for n in names)
+
+    # .pbip manifest points at the Report folder.
+    pbip_doc = json.loads(zf.read("account_position_model.pbip"))
+    assert pbip_doc["artifacts"][0]["report"]["path"] == report_root
+
+    # definition.pbir points (byPath) at the sibling SemanticModel folder.
+    pbir_doc = json.loads(zf.read(f"{report_root}/definition.pbir"))
+    assert pbir_doc["datasetReference"]["byPath"]["path"] == f"../{sm_root}"
+
+    # .platform correctly identifies this as a Report item.
+    report_platform = json.loads(zf.read(f"{report_root}/.platform"))
+    assert report_platform["metadata"]["type"] == "Report"
+
+    # pages.json's activePageName must be one of pageOrder's entries, and
+    # that page id must have a matching page.json on disk.
+    pages_doc = json.loads(zf.read(f"{report_root}/definition/pages/pages.json"))
+    active = pages_doc["activePageName"]
+    assert active in pages_doc["pageOrder"]
+    page_doc = json.loads(zf.read(f"{report_root}/definition/pages/{active}/page.json"))
+    assert page_doc["name"] == active
+    assert page_doc["displayOption"] in ("FitToPage", "FitToWidth", "ActualSize")
+
+    # Every JSON file in the Report folder must at least be valid JSON.
+    for name in names:
+        if name.startswith(report_root) and name.endswith(".json"):
+            json.loads(zf.read(name))  # raises if malformed
+
+
+def test_build_report_project_files_sanitizes_project_name():
+    files = pbe.build_report_project_files("my project! v1.0", "my_project.SemanticModel")
+    root_names = {path.split("/", 1)[0] for path in files}
+    assert len(root_names) == 1
+    root = next(iter(root_names))
+    assert root.endswith(".Report")
+    assert "!" not in root
+    assert all("!" not in p for p in files)
+
+
 def test_generate_synthetic_data_shapes(account_position_model):
     data = pbe.generate_synthetic_data(account_position_model, n_rows=25, seed=1)
     assert set(data.keys()) == {"DIM_CLIENT", "DIM_ACCOUNT", "DIM_SECURITY", "DIM_DATE", "FACT_POSITION"}

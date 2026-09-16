@@ -90,23 +90,25 @@ Once a base YAML exists, this section lets you convert it with one click.
 Two options are shown; only **Power BI** is implemented (Tableau appears
 as a clearly-labeled "not built yet" option):
 
-- **Power BI**: generates a real **TMSL** (`model.bim`) document and a
-  **TMDL**-based `<name>.SemanticModel` folder (the same text-based format
-  behind Fabric's git-integrated semantic models).
-  - Download it as a ready-to-use `.zip`. **Important:** this is a
-    *semantic-model-only* export (no paired Report), so Power BI Desktop's
-    *File \u2192 Open \u2192 Power BI Project* will **not** open it directly --
-    that command specifically expects a matching `.Report` folder alongside
-    the `.SemanticModel` one, which this app doesn't generate (there's no
-    way to verify a hand-built Report artifact opens correctly without a
-    real Power BI Desktop to test against, so we don't guess at one).
-  - What **does** work, with no Fabric/Premium workspace required: commit
-    the folder to git for Fabric's git integration, or deploy it headlessly
-    via the Fabric REST API (see **Deploy to Fabric** below), or -- the
-    most common path if Power BI Desktop is your target -- open
-    `model.bim` in **[Tabular Editor](https://tabulareditor.com/)** (free:
-    Tabular Editor 2) and deploy it from there. See "Getting this into
-    Power BI Desktop with Tabular Editor" below for the exact steps.
+- **Power BI**: generates a real **Power BI Project** -- a top-level
+  `<name>.pbip` manifest, a `<name>.Report` folder (a minimal blank
+  report), and a `<name>.SemanticModel` folder (TMSL `model.bim` +
+  TMDL `definition/` files), all zipped together.
+  - Download it as a ready-to-use `.zip`. Unzip and open the `.pbip` file
+    in Power BI Desktop (*File \u2192 Open \u2192 Power BI Project*) -- **no
+    Tabular Editor, Fabric workspace, or any other tool needed** just to
+    get it open; the blank report and semantic model load together in one
+    step.
+  - **This is a best-effort scaffold**: the blank report is generated
+    without a real Power BI Desktop available in this environment to
+    verify against. If for any reason it doesn't open cleanly in yours,
+    the `.SemanticModel` folder still works fine on its own via three
+    other paths that don't depend on the Report scaffold at all: **Tabular
+    Editor** (no Fabric/Premium workspace needed -- see "Getting this into
+    Power BI Desktop with Tabular Editor" below), the **Deploy to Fabric**
+    tab, or committing the folder to a Fabric workspace's **git
+    integration**. Each `.zip` includes its own README.md files
+    documenting all of this offline, too.
   - Ossie `datasets`/`fields` become Tabular `tables`/`columns`; Ossie
     `relationships` become Tabular relationships (many-to-one, matching
     Ossie's own semantics); Ossie `metrics` become DAX `measures` via a
@@ -133,7 +135,9 @@ as a clearly-labeled "not built yet" option):
     the exported files** -- Power BI's Snowflake connector prompts for
     sign-in (username/password, SSO, or key-pair) itself, the first time
     the deployed model connects or refreshes.
-  - **Three ways to get the model into Power BI/Fabric**:
+  - **If the `.pbip` scaffold doesn't open cleanly, three fallback paths**
+    (all use just the `.SemanticModel` folder, ignoring the `.Report`
+    scaffold entirely):
     1. **Tabular Editor \u2192 Power BI Desktop** (works everywhere, no
        Fabric/Premium needed) -- see the dedicated section below.
     2. **Deploy to Fabric** (the `\U0001f6f0\ufe0f Deploy to Fabric` sub-tab,
@@ -161,14 +165,14 @@ as a clearly-labeled "not built yet" option):
        to a git repo connected to a Fabric workspace's **git integration**
        -- `git push` alone syncs it, with no API call and no desktop app.
 
-  #### Getting this into Power BI Desktop with Tabular Editor
+  #### Fallback: getting this into Power BI Desktop with Tabular Editor
 
-  Power BI Desktop has no built-in "import a `model.bim`" command, and
-  this export deliberately doesn't try to fake a full Power BI Project
-  (a real one also needs a paired `.Report` folder, which can't be
-  generated reliably or verified without a real Power BI Desktop to test
-  against). [Tabular Editor](https://tabulareditor.com/) (free: version 2)
-  is the standard, reliable way around that:
+  If the generated `.pbip`/`.Report` scaffold doesn't open cleanly in your
+  Power BI Desktop (it's a best-effort scaffold -- see above), or if
+  Tabular Editor is more familiar/available to you than debugging a
+  report file, [Tabular Editor](https://tabulareditor.com/) (free: version
+  2) is the standard, reliable way to get a `model.bim` into Power BI
+  Desktop without relying on any `.Report` folder at all:
 
   1. In Power BI Desktop, create a **blank report** (*File \u2192 New*) and
      leave it empty -- don't add any data. Keep it open; while it's open,

@@ -15,11 +15,17 @@ BI/Fabric semantic models are defined in under the hood:
   ``relationships.tmdl``). This is the format behind Fabric's
   git-integrated semantic models: push the generated folder to a Fabric
   workspace's connected git repo, or deploy it with the Fabric REST API /
-  ``fab`` CLI -- fully headless, no GUI required. It is a
-  *semantic-model-only* export (no paired ``.Report`` folder), so Power BI
-  Desktop's *File > Open > Power BI Project* won't open it directly --
-  load ``model.bim`` in Tabular Editor instead if Power BI Desktop is the
-  target (see the README).
+  ``fab`` CLI -- fully headless, no GUI required.
+
+``build_pbip_zip_bytes`` bundles the semantic model together with a
+minimal, blank ``.Report`` scaffold and a top-level ``.pbip`` manifest, so
+the download is a genuine, directly-openable Power BI Project (*File >
+Open > Power BI Project* in Desktop) with no third-party tool required
+just to open it. That blank report is a best-effort scaffold generated
+without a real Power BI Desktop available here to verify against; if it
+doesn't open cleanly, the ``.SemanticModel`` folder still works on its own
+via Tabular Editor or the Fabric REST API / git integration (see the
+README).
 
 This module also includes a small, best-effort SQL -> DAX translator for
 field/metric expressions, and a synthetic-data + DuckDB based "run the
@@ -480,47 +486,151 @@ def build_semantic_model_project_files(
 
     readme = (
         f"# {safe_name} -- Power BI semantic model (generated from Apache Ossie)\n\n"
-        "This folder is a Fabric/Power BI semantic-model-as-code project -- but it is\n"
-        "*semantic-model-only* (no paired .Report folder), so Power BI Desktop's own\n"
-        "File > Open > Power BI Project will NOT open it directly; that command\n"
-        "specifically expects a matching .Report folder alongside this .SemanticModel\n"
-        "one. Three ways to actually use this instead:\n\n"
-        "1. Tabular Editor -> Power BI Desktop (no Fabric/Premium workspace needed):\n"
-        "   a. In Power BI Desktop, create a blank report (File > New) and leave it\n"
-        "      empty. Keep it open -- it now hosts a private local Analysis Services\n"
-        "      instance in the background.\n"
-        "   b. In Tabular Editor (free: version 2, https://tabulareditor.com/):\n"
-        "      File > Open > From File... and pick model.bim from this folder.\n"
-        "   c. Review each table's Power Query (M) partition source (Table >\n"
-        "      Partitions) and point it at your real data source if it's still the\n"
-        "      generic placeholder.\n"
-        "   d. File > Deploy... and pick the blank Power BI Desktop file from step a\n"
-        "      as the target (Tabular Editor lists local Desktop instances by port).\n"
-        "      This overwrites the blank model's schema with everything here --\n"
-        "      tables, columns, relationships, and DAX measures.\n"
-        "   e. Back in Power BI Desktop, the Fields pane now shows your tables. Save\n"
-        "      As a regular .pbix -- it opens like any other Power BI file from then\n"
-        "      on.\n"
-        "   If your org has a Premium / Premium Per User / Fabric workspace, Tabular\n"
-        "   Editor can deploy model.bim directly to that workspace's XMLA endpoint\n"
-        "   instead (File > Deploy... -> powerbi://api.powerbi.com/v1.0/myorg/<workspace>),\n"
-        "   skipping Desktop entirely.\n"
-        "2. Commit this folder to a git repo connected to a Fabric workspace's git\n"
-        "   integration -- git push alone syncs it, no desktop app or API call needed.\n"
-        "3. Deploy headlessly via the Fabric REST API (see the app's \"Deploy to\n"
-        "   Fabric\" tab, or fabric_deploy.py) -- requires a Fabric-enabled workspace.\n\n"
-        "model.bim contains the same model as plain TMSL JSON, for tools (like Tabular\n"
-        "Editor) that prefer a single JSON file over the TMDL folder layout.\n"
+        "This is the semantic model half of the Power BI Project in this zip --\n"
+        "`.platform` + `definition.pbism` + TMDL `definition/` files, plus the raw\n"
+        "`model.bim` (TMSL) for tools that prefer a single JSON file. It's paired with\n"
+        f"a blank `{safe_name}.Report` folder and a top-level `{safe_name}.pbip` file\n"
+        "(see the project-level README) so the whole thing opens together in Power BI\n"
+        "Desktop.\n\n"
+        "Before deploying for real: review the placeholder Power Query (M) source\n"
+        "expressions in definition/tables/*.tmdl (or model.bim) and point them at your\n"
+        "real data source, unless you already generated this with Snowflake connection\n"
+        "details filled in.\n"
     )
     files[f"{root}/README.md"] = readme.encode("utf-8")
 
     return files
 
 
+def build_pbip_manifest_bytes(report_folder_name: str) -> bytes:
+    """The top-level ``<project>.pbip`` manifest that lets Power BI
+    Desktop's *File > Open > Power BI Project* recognize and load the
+    whole project (report + semantic model together) in one step."""
+    doc = {
+        "version": "1.0",
+        "artifacts": [{"report": {"path": report_folder_name}}],
+        "settings": {"enableAutoRecovery": True},
+    }
+    return json.dumps(doc, indent=2).encode("utf-8")
+
+
+def build_report_project_files(project_name: str, semantic_model_folder_name: str) -> Dict[str, bytes]:
+    """The minimal *thick* PBIR ``.Report`` folder for a Power BI Project:
+    one blank page, bound (via ``byPath``) to the sibling
+    ``.SemanticModel`` folder -- so opening the top-level ``.pbip`` file
+    (or this folder's ``definition.pbir`` directly) in Power BI Desktop
+    loads both the report and the semantic model together, no third-party
+    tool (Tabular Editor, Fabric workspace, ...) required for that first
+    open.
+
+    This is deliberately the smallest valid report: one empty page, no
+    theme reference (so there's no dependency on a base-theme resource
+    file this app would also have to ship correctly), no visuals. It's
+    generated without a real Power BI Desktop available in this
+    environment to verify against -- if it doesn't open cleanly in yours,
+    fall back to the Tabular Editor or Fabric deployment paths documented
+    in the README, which don't depend on this Report scaffold at all.
+    """
+    safe_name = _safe_project_name(project_name)
+    root = f"{safe_name}.Report"
+    page_id = uuid.uuid4().hex[:20]
+
+    def _j(doc: Dict[str, Any]) -> bytes:
+        return json.dumps(doc, indent=2).encode("utf-8")
+
+    platform_doc = {
+        "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+        "metadata": {"type": "Report", "displayName": safe_name},
+        "config": {"version": "2.0", "logicalId": str(uuid.uuid4())},
+    }
+    pbir_doc = {
+        "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
+        "version": "4.0",
+        "datasetReference": {"byPath": {"path": f"../{semantic_model_folder_name}"}},
+    }
+    version_doc = {
+        "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/versionMetadata/1.0.0/schema.json",
+        "version": "2.0.0",
+    }
+    report_doc = {
+        "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/3.0.0/schema.json",
+        "filterConfig": {"filters": []},
+        "objects": {},
+        "settings": {
+            "useStylableVisualContainerHeader": True,
+            "useEnhancedTooltips": True,
+        },
+        "resourcePackages": [],
+    }
+    pages_doc = {
+        "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/pagesMetadata/1.0.0/schema.json",
+        "pageOrder": [page_id],
+        "activePageName": page_id,
+    }
+    page_doc = {
+        "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.0.0/schema.json",
+        "name": page_id,
+        "displayName": "Overview",
+        "displayOption": "FitToPage",
+        "width": 1280,
+        "height": 720,
+    }
+
+    return {
+        f"{root}/.platform": _j(platform_doc),
+        f"{root}/definition.pbir": _j(pbir_doc),
+        f"{root}/definition/version.json": _j(version_doc),
+        f"{root}/definition/report.json": _j(report_doc),
+        f"{root}/definition/pages/pages.json": _j(pages_doc),
+        f"{root}/definition/pages/{page_id}/page.json": _j(page_doc),
+    }
+
+
 def build_pbip_zip_bytes(
     ossie_model: Dict[str, Any], project_name: str, data_source: Optional[Dict[str, Any]] = None
 ) -> bytes:
+    """The full Power BI Project ``.zip``: a top-level ``<name>.pbip``
+    manifest, a ``<name>.Report`` folder (a minimal blank report bound to
+    the model), and the ``<name>.SemanticModel`` folder itself. Unzip and
+    open the ``.pbip`` file (or ``.Report/definition.pbir`` directly) in
+    Power BI Desktop -- no Tabular Editor, Fabric workspace, or other tool
+    needed just to get it open.
+
+    The blank report is a best-effort scaffold (see
+    ``build_report_project_files``) generated without a real Power BI
+    Desktop to verify against; the bundled top-level README documents the
+    Tabular Editor / Fabric fallbacks in case it doesn't open cleanly.
+    """
+    safe_name = _safe_project_name(project_name)
+    sm_folder = f"{safe_name}.SemanticModel"
+    report_folder = f"{safe_name}.Report"
+
     files = build_semantic_model_project_files(ossie_model, project_name, data_source=data_source)
+    files.update(build_report_project_files(project_name, sm_folder))
+    files[f"{safe_name}.pbip"] = build_pbip_manifest_bytes(report_folder)
+
+    project_readme = (
+        f"# {safe_name} -- Power BI Project (generated from Apache Ossie)\n\n"
+        f"Unzip this, then open `{safe_name}.pbip` in Power BI Desktop (or open\n"
+        f"`{report_folder}/definition.pbir` directly) -- File > Open > Power BI Project,\n"
+        "or just double-click the .pbip file if your Desktop version associates it.\n"
+        "That loads the (blank) report together with the semantic model in one step.\n"
+        "No Tabular Editor, Fabric workspace, or other third-party tool is required\n"
+        "just to get this open.\n\n"
+        "Two things to know:\n\n"
+        f"1. `{report_folder}` is a minimal, blank single-page report scaffold --\n"
+        "   generated without a real Power BI Desktop available in this environment to\n"
+        "   verify against. If for any reason it doesn't open cleanly in yours, the\n"
+        f"   `{sm_folder}` folder still works on its own via Tabular Editor or the\n"
+        "   Fabric REST API / git integration -- see that folder's own README.md for\n"
+        "   those steps, which don't depend on this Report scaffold at all.\n"
+        "2. Before connecting to real data: review the placeholder Power Query (M)\n"
+        f"   source expressions in `{sm_folder}/definition/tables/*.tmdl` (or\n"
+        "   `model.bim`) and point them at your real data source, unless you already\n"
+        "   generated this with Snowflake connection details filled in.\n"
+    )
+    files[f"{safe_name}_README.md"] = project_readme.encode("utf-8")
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for path, content in files.items():

@@ -955,15 +955,16 @@ def _render_bi_section():
 
     with bi_tabs[0]:
         st.markdown(
-            "Generates a real **Power BI / Fabric semantic model**: TMSL (`model.bim`) plus a "
-            "TMDL-based `.SemanticModel` folder. This is a *semantic-model-only* export (no "
-            "paired Report), so Power BI Desktop's *File \u2192 Open \u2192 Power BI Project* "
-            "won't open it directly \u2014 that needs a matching `.Report` folder too. Instead: "
-            "commit it to git for Fabric's git integration, deploy it headlessly via the "
-            "**Deploy to Fabric** tab below, or open `model.bim` in "
-            "**[Tabular Editor](https://tabulareditor.com/)** and deploy *from there* to a "
-            "blank Power BI Desktop file (or straight to a Premium/Fabric workspace's XMLA "
-            "endpoint) \u2014 see the README for the exact Tabular Editor steps."
+            "Generates a real **Power BI Project**: a top-level `.pbip` file, a `.Report` "
+            "folder (a minimal blank report), and a TMDL/TMSL-based `.SemanticModel` folder, "
+            "all zipped together \u2014 unzip and open the `.pbip` file in Power BI Desktop "
+            "(*File \u2192 Open \u2192 Power BI Project*) with **no other tool required**. The "
+            "blank report is a best-effort scaffold (built without a real Power BI Desktop "
+            "available here to test against) \u2014 if it doesn't open cleanly in yours, the "
+            "`.SemanticModel` folder still works on its own via **Tabular Editor** (deploy "
+            "`model.bim` to a blank Desktop file or a Premium/Fabric XMLA endpoint), the "
+            "**Deploy to Fabric** tab below, or git integration \u2014 see the README for all "
+            "of these paths."
         )
 
         use_snowflake = st.checkbox("\U0001f9ca Use Snowflake as the data source", key="pbi_use_snowflake")
@@ -1045,13 +1046,12 @@ def _render_bi_section():
             )
             if "Snowflake.Databases" in export.tmsl_json:
                 st.caption(
-                    "\u2705 This export uses real Snowflake connection code. Next: unzip it, "
-                    "open `model.bim` in **Tabular Editor** and deploy it to a blank Power BI "
-                    "Desktop file (or straight to a Premium/Fabric workspace's XMLA endpoint) "
-                    "\u2014 see the README's \"Getting this into Power BI Desktop with Tabular "
-                    "Editor\" section \u2014 then hit **Refresh**. Power BI will prompt you for "
-                    "Snowflake sign-in (username/password, SSO, or key-pair) and pull real data "
-                    "into the measures above."
+                    "\u2705 This export uses real Snowflake connection code. Next: unzip it and "
+                    "open the `.pbip` file in Power BI Desktop, then hit **Refresh** \u2014 Power "
+                    "BI will prompt you for Snowflake sign-in (username/password, SSO, or "
+                    "key-pair) and pull real data into the measures above. If the `.pbip` "
+                    "doesn't open cleanly, fall back to Tabular Editor with `model.bim` (see "
+                    "the README)."
                 )
             else:
                 st.caption(
