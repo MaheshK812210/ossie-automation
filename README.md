@@ -92,8 +92,16 @@ as a clearly-labeled "not built yet" option):
 
 - **Power BI**: generates a real **Power BI Project** -- a top-level
   `<name>.pbip` manifest, a `<name>.Report` folder (a minimal blank
-  report), and a `<name>.SemanticModel` folder (TMSL `model.bim` +
-  TMDL `definition/` files), all zipped together.
+  report), and a `<name>.SemanticModel` folder (TMSL `model.bim`), all
+  zipped together. The `.SemanticModel` folder deliberately ships
+  **TMSL (`model.bim`, plain JSON) only, never a TMDL `definition/`
+  folder alongside it** -- per Microsoft's own docs those two are
+  mutually exclusive representations of the same model, and shipping
+  both in one folder is itself invalid (this caused a "TMDL Format
+  Error: Invalid line type" opening the project, before this was fixed).
+  TMDL is still available separately -- see the **"model.bim (TMSL)" /
+  "TMDL files"** tabs in the app, and the **Deploy to Fabric** path below,
+  which uses TMDL on its own.
   - Download it as a ready-to-use `.zip`. Unzip and open the `.pbip` file
     in Power BI Desktop (*File \u2192 Open \u2192 Power BI Project*) -- **no
     Tabular Editor, Fabric workspace, or any other tool needed** just to

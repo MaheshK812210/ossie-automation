@@ -511,37 +511,47 @@ def build_semantic_model_project_files(
     ossie_model: Dict[str, Any], project_name: str, data_source: Optional[Dict[str, Any]] = None
 ) -> Dict[str, bytes]:
     """The full file set for a Fabric/Power BI ``<name>.SemanticModel``
-    folder: ``.platform`` + ``definition.pbism`` + TMDL ``definition/``
-    files, plus the raw ``model.bim`` (TMSL) for tools that prefer JSON.
-    This folder can be committed to git for Fabric's git integration,
-    deployed headlessly via the Fabric REST API / ``fab`` CLI / Tabular
-    Editor CLI, or opened directly in Power BI Desktop.
+    folder used in the downloadable, directly-openable ``.pbip`` project:
+    ``.platform`` + ``definition.pbism`` + ``model.bim`` (TMSL/JSON).
+
+    Deliberately **TMSL only, no TMDL** ``definition/`` folder here: per
+    Microsoft's own docs, ``model.bim`` and a TMDL ``definition/`` folder
+    are *mutually exclusive* representations of the same semantic model --
+    shipping both in the same folder is itself invalid and was previously
+    causing generic, hard-to-diagnose TMDL parse errors ("Invalid line
+    type") when Power BI Desktop opened the project. TMSL is plain JSON
+    with no indentation sensitivity at all, so it's the safer format to
+    ship for an export this app can't verify against a real Power BI
+    Desktop. TMDL is still generated separately (see ``build_tmdl_files``)
+    for the app's own "TMDL files" preview tab and for headless Fabric
+    REST API deployment (``fabric_deploy.py``), which uses TMDL alone --
+    never mixed with ``model.bim``.
     """
     safe_name = _safe_project_name(project_name)
     root = f"{safe_name}.SemanticModel"
+
+    tmsl = build_tmsl_model(ossie_model, data_source=data_source)
     files: Dict[str, bytes] = {
         f"{root}/.platform": build_platform_bytes(safe_name),
         f"{root}/definition.pbism": build_pbism_bytes(),
+        f"{root}/model.bim": tmsl_to_json_str(tmsl).encode("utf-8"),
     }
-
-    for rel_path, content in build_tmdl_files(ossie_model, data_source=data_source).items():
-        files[f"{root}/{rel_path}"] = content.encode("utf-8")
-
-    tmsl = build_tmsl_model(ossie_model, data_source=data_source)
-    files[f"{root}/model.bim"] = tmsl_to_json_str(tmsl).encode("utf-8")
 
     readme = (
         f"# {safe_name} -- Power BI semantic model (generated from Apache Ossie)\n\n"
         "This is the semantic model half of the Power BI Project in this zip --\n"
-        "`.platform` + `definition.pbism` + TMDL `definition/` files, plus the raw\n"
-        "`model.bim` (TMSL) for tools that prefer a single JSON file. It's paired with\n"
+        "`.platform` + `definition.pbism` + `model.bim` (TMSL/JSON). It's paired with\n"
         f"a blank `{safe_name}.Report` folder and a top-level `{safe_name}.pbip` file\n"
         "(see the project-level README) so the whole thing opens together in Power BI\n"
         "Desktop.\n\n"
+        "This folder intentionally does NOT also include a TMDL `definition/` folder --\n"
+        "model.bim and a TMDL folder are mutually exclusive representations of the same\n"
+        "model, and shipping both caused this project to fail to open. If you want the\n"
+        "TMDL (folder-of-text-files) form instead -- e.g. for Fabric git integration --\n"
+        "see the app's \"TMDL files\" tab, or fabric_deploy.py for headless deployment.\n\n"
         "Before deploying for real: review the placeholder Power Query (M) source\n"
-        "expressions in definition/tables/*.tmdl (or model.bim) and point them at your\n"
-        "real data source, unless you already generated this with Snowflake connection\n"
-        "details filled in.\n"
+        "expressions in model.bim's partitions and point them at your real data source,\n"
+        "unless you already generated this with Snowflake connection details filled in.\n"
     )
     files[f"{root}/README.md"] = readme.encode("utf-8")
 
@@ -671,9 +681,9 @@ def build_pbip_zip_bytes(
         "   Fabric REST API / git integration -- see that folder's own README.md for\n"
         "   those steps, which don't depend on this Report scaffold at all.\n"
         "2. Before connecting to real data: review the placeholder Power Query (M)\n"
-        f"   source expressions in `{sm_folder}/definition/tables/*.tmdl` (or\n"
-        "   `model.bim`) and point them at your real data source, unless you already\n"
-        "   generated this with Snowflake connection details filled in.\n"
+        f"   source expressions in `{sm_folder}/model.bim`'s partitions and point them\n"
+        "   at your real data source, unless you already generated this with Snowflake\n"
+        "   connection details filled in.\n"
     )
     files[f"{safe_name}_README.md"] = project_readme.encode("utf-8")
 

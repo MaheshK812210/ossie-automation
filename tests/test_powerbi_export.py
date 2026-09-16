@@ -260,10 +260,14 @@ def test_build_pbip_zip_contains_expected_files(account_position_model):
     root = "account_position_model.SemanticModel"
     assert f"{root}/.platform" in names
     assert f"{root}/definition.pbism" in names
-    assert f"{root}/definition/database.tmdl" in names
-    assert f"{root}/definition/model.tmdl" in names
-    assert f"{root}/definition/tables/FACT_POSITION.tmdl" in names
     assert f"{root}/model.bim" in names
+
+    # model.bim (TMSL) and a TMDL definition/ folder are mutually exclusive
+    # representations of the same semantic model per Microsoft's own docs --
+    # shipping both in the same .SemanticModel folder is itself invalid and
+    # was the root cause of a "TMDL Format Error: Invalid line type" opening
+    # this project in Power BI Desktop. Guard against that regressing.
+    assert not any(n.startswith(f"{root}/definition/") for n in names)
 
     platform_doc = json.loads(zf.read(f"{root}/.platform"))
     assert platform_doc["metadata"]["type"] == "SemanticModel"

@@ -956,8 +956,9 @@ def _render_bi_section():
     with bi_tabs[0]:
         st.markdown(
             "Generates a real **Power BI Project**: a top-level `.pbip` file, a `.Report` "
-            "folder (a minimal blank report), and a TMDL/TMSL-based `.SemanticModel` folder, "
-            "all zipped together \u2014 unzip and open the `.pbip` file in Power BI Desktop "
+            "folder (a minimal blank report), and a `.SemanticModel` folder (TMSL `model.bim`, "
+            "plain JSON \u2014 never mixed with a TMDL folder, which Power BI Desktop treats as "
+            "invalid), all zipped together \u2014 unzip and open the `.pbip` file in Power BI Desktop "
             "(*File \u2192 Open \u2192 Power BI Project*) with **no other tool required**. The "
             "blank report is a best-effort scaffold (built without a real Power BI Desktop "
             "available here to test against) \u2014 if it doesn't open cleanly in yours, the "
