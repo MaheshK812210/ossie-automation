@@ -86,6 +86,53 @@ def test_sql_to_dax(sql, expected):
     assert pbe.sql_to_dax(sql) == expected
 
 
+def test_sql_to_dax_qualifies_bare_column_with_schema():
+    aliases = {"FACT_POSITION": {"market_value": "MARKET_VALUE", "mkt_val_amt": "MARKET_VALUE"}}
+    assert (
+        pbe.sql_to_dax(
+            "SUM(MARKET_VALUE)",
+            column_aliases=aliases,
+            default_table="FACT_POSITION",
+        )
+        == "SUM(FACT_POSITION[MARKET_VALUE])"
+    )
+    assert (
+        pbe.sql_to_dax(
+            "SUM(MKT_VAL_AMT)",
+            column_aliases=aliases,
+            default_table="FACT_POSITION",
+        )
+        == "SUM(FACT_POSITION[MARKET_VALUE])"
+    )
+
+
+def test_sql_to_dax_maps_physical_table_column_to_logical():
+    aliases = {"FACT_POSITION": {"market_value": "MARKET_VALUE", "mkt_val_amt": "MARKET_VALUE"}}
+    assert (
+        pbe.sql_to_dax(
+            "SUM(FACT_POSITION.MKT_VAL_AMT)",
+            column_aliases=aliases,
+            default_table="FACT_POSITION",
+        )
+        == "SUM(FACT_POSITION[MARKET_VALUE])"
+    )
+
+
+def test_sql_to_dax_count_star_uses_countrows():
+    assert (
+        pbe.sql_to_dax("COUNT(*)", default_table="FACT_POSITION")
+        == "COUNTROWS(FACT_POSITION)"
+    )
+
+
+def test_build_tmsl_measures_use_table_column_dax(account_position_model):
+    tmsl = pbe.build_tmsl_model(account_position_model)
+    fact = next(t for t in tmsl["model"]["tables"] if t["name"] == "FACT_POSITION")
+    by_name = {m["name"]: m["expression"] for m in fact["measures"]}
+    assert by_name["total_market_value"] == "SUM(FACT_POSITION[MARKET_VALUE])"
+    assert "[" in by_name["total_market_value"] and "]" in by_name["total_market_value"]
+
+
 def test_sql_to_dax_leaves_ambiguous_multi_division_untouched():
     expr = "a.x / b.y / c.z"
     out = pbe.sql_to_dax(expr)

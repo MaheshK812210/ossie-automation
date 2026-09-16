@@ -123,6 +123,127 @@ def _guess_format_string(ossie_datatype: Optional[str]) -> str:
 _DOT_REF_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\b")
 _COUNT_DISTINCT_RE = re.compile(r"COUNT\s*\(\s*DISTINCT\s+([^)]+)\)", re.IGNORECASE)
 _NULLIF_ZERO_RE = re.compile(r"NULLIF\s*\(\s*(.+?)\s*,\s*0\s*\)", re.IGNORECASE)
+_COUNT_STAR_RE = re.compile(r"\bCOUNT\s*\(\s*\*\s*\)", re.IGNORECASE)
+# Aggregates whose single bare-column argument should become Table[Column].
+_AGG_BARE_COL_RE = re.compile(
+    r"\b(SUM|AVG|AVERAGE|MIN|MAX|COUNT|DISTINCTCOUNT)\s*\(\s*"
+    r"([A-Za-z_][A-Za-z0-9_]*)\s*\)",
+    re.IGNORECASE,
+)
+_SQL_DAX_KEYWORDS = {
+    "sum",
+    "avg",
+    "average",
+    "min",
+    "max",
+    "count",
+    "distinctcount",
+    "countrows",
+    "divide",
+    "distinct",
+    "nullif",
+    "and",
+    "or",
+    "not",
+    "true",
+    "false",
+    "in",
+    "on",
+    "as",
+    "case",
+    "when",
+    "then",
+    "else",
+    "end",
+    "cast",
+    "coalesce",
+    "if",
+    "switch",
+    "calculate",
+    "filter",
+    "all",
+    "values",
+    "related",
+    "blank",
+}
+
+
+def _build_column_alias_maps(datasets: List[Dict[str, Any]]) -> Dict[str, Dict[str, str]]:
+    """``table_name -> {alias_lower: logical_column_name}``.
+
+    Aliases include the Ossie field name (logical / Column Title) and the
+    physical ``source_column_name`` when present, so metric SQL that still
+    uses warehouse names rewrites to DAX ``Table[LogicalColumn]``.
+    """
+    maps: Dict[str, Dict[str, str]] = {}
+    for dataset in datasets:
+        aliases: Dict[str, str] = {}
+        for field in dataset.get("fields", []):
+            logical = field["name"]
+            aliases[logical.lower()] = logical
+            physical = physical_source_column(field)
+            if physical:
+                aliases[physical.lower()] = logical
+        maps[dataset["name"]] = aliases
+    return maps
+
+
+def _rewrite_table_column_refs(expr: str, column_aliases: Optional[Dict[str, Dict[str, str]]]) -> str:
+    def repl(match: re.Match) -> str:
+        table, col = match.group(1), match.group(2)
+        if column_aliases and table in column_aliases:
+            logical = column_aliases[table].get(col.lower(), col)
+            return f"{table}[{logical}]"
+        return f"{table}[{col}]"
+
+    return _DOT_REF_RE.sub(repl, expr)
+
+
+def _rewrite_bare_aggregate_columns(
+    expr: str,
+    column_aliases: Optional[Dict[str, Dict[str, str]]],
+    default_table: Optional[str],
+) -> str:
+    """``SUM(MARKET_VALUE)`` / ``SUM(MKT_VAL_AMT)`` -> ``SUM(Table[Logical])``.
+
+    Only rewrites when the bare name resolves uniquely via ``default_table``
+    or a single table in ``column_aliases``. Leaves already-qualified
+    ``Table[Column]`` args alone (they don't match this pattern).
+    """
+    if not column_aliases:
+        return expr
+
+    def resolve(col: str) -> Optional[Tuple[str, str]]:
+        key = col.lower()
+        if default_table and default_table in column_aliases:
+            logical = column_aliases[default_table].get(key)
+            if logical:
+                return default_table, logical
+        hits = [
+            (table, aliases[key])
+            for table, aliases in column_aliases.items()
+            if key in aliases
+        ]
+        if len(hits) == 1:
+            return hits[0]
+        return None
+
+    def repl(match: re.Match) -> str:
+        fn, col = match.group(1), match.group(2)
+        if col.lower() in _SQL_DAX_KEYWORDS:
+            return match.group(0)
+        resolved = resolve(col)
+        if not resolved:
+            return match.group(0)
+        table, logical = resolved
+        dax_fn = "AVERAGE" if fn.upper() == "AVG" else fn.upper()
+        if dax_fn == "COUNT":
+            # COUNT(column) in SQL ≈ COUNTA / non-blank count; use COUNTROWS
+            # only for COUNT(*). Keep COUNT as DISTINCTCOUNT is separate.
+            dax_fn = "COUNTA"
+        return f"{dax_fn}({table}[{logical}])"
+
+    return _AGG_BARE_COL_RE.sub(repl, expr)
 
 
 def _wrap_top_level_division(expr: str) -> str:
@@ -149,20 +270,31 @@ def _wrap_top_level_division(expr: str) -> str:
     return f"DIVIDE({left}, {right})"
 
 
-def sql_to_dax(expr: str) -> str:
+def sql_to_dax(
+    expr: str,
+    *,
+    column_aliases: Optional[Dict[str, Dict[str, str]]] = None,
+    default_table: Optional[str] = None,
+) -> str:
     """Best-effort conversion of an Ossie ANSI_SQL field/metric expression
     into a DAX expression suitable for a Tabular model measure/column.
 
-    Handles: ``table.column`` -> ``table[column]``, ``COUNT(DISTINCT x)`` ->
-    ``DISTINCTCOUNT(x)``, ``AVG(`` -> ``AVERAGE(``, ``NULLIF(x, 0)`` ->
-    ``x`` (since DAX's ``DIVIDE`` is zero-safe on its own), and a single
-    top-level division -> ``DIVIDE(a, b)``. Arbitrary/complex SQL may not
-    translate perfectly -- always review generated DAX before deploying.
+    Handles: ``table.column`` -> ``table[column]`` (mapping physical source
+    names to logical Column Title when ``column_aliases`` is provided),
+    bare ``SUM(column)`` -> ``SUM(table[column])`` when resolvable,
+    ``COUNT(DISTINCT x)`` -> ``DISTINCTCOUNT(x)``, ``COUNT(*)`` ->
+    ``COUNTROWS(table)``, ``AVG`` -> ``AVERAGE``, ``NULLIF(x, 0)`` -> ``x``,
+    and a single top-level division -> ``DIVIDE(a, b)``. Arbitrary/complex
+    SQL may not translate perfectly -- always review generated DAX before
+    deploying.
     """
     if not expr:
         return expr
-    s = _DOT_REF_RE.sub(lambda m: f"{m.group(1)}[{m.group(2)}]", expr)
+    s = _rewrite_table_column_refs(expr, column_aliases)
     s = _COUNT_DISTINCT_RE.sub(lambda m: f"DISTINCTCOUNT({m.group(1).strip()})", s)
+    if default_table and _COUNT_STAR_RE.search(s):
+        s = _COUNT_STAR_RE.sub(f"COUNTROWS({default_table})", s)
+    s = _rewrite_bare_aggregate_columns(s, column_aliases, default_table)
     s = re.sub(r"\bAVG\s*\(", "AVERAGE(", s, flags=re.IGNORECASE)
     s = _NULLIF_ZERO_RE.sub(lambda m: m.group(1).strip(), s)
     s = _wrap_top_level_division(s)
@@ -190,6 +322,26 @@ def _first_table_reference(expr: str, table_names) -> Optional[str]:
         if best_idx is None or idx < best_idx:
             best_idx, best_name = idx, name
     return best_name
+
+
+def _infer_home_table(
+    expr: str,
+    table_names: List[str],
+    column_aliases: Dict[str, Dict[str, str]],
+) -> Optional[str]:
+    home = _first_table_reference(expr, table_names)
+    if home:
+        return home
+    # Bare column / physical name unique to one table.
+    candidates: List[str] = []
+    for table, aliases in column_aliases.items():
+        for alias in aliases:
+            if re.search(rf"\b{re.escape(alias)}\b", expr, flags=re.IGNORECASE):
+                if table not in candidates:
+                    candidates.append(table)
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
 
 
 def _referenced_tables(expr: str, table_names) -> List[str]:
@@ -296,17 +448,19 @@ def build_tmsl_model(
     instead (meant to be hand-edited before deploying).
     """
     sm = ossie_model["semantic_model"][0]
-    dataset_names = [d["name"] for d in sm.get("datasets", [])]
+    datasets = sm.get("datasets", [])
+    dataset_names = [d["name"] for d in datasets]
+    column_aliases = _build_column_alias_maps(datasets)
 
     metrics_by_table: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     unassigned_metrics: List[Dict[str, Any]] = []
     for metric in sm.get("metrics", []):
         expr = _get_ansi_expression(metric["expression"])
-        home = _first_table_reference(expr, dataset_names)
+        home = _infer_home_table(expr, dataset_names, column_aliases)
         (metrics_by_table[home] if home else unassigned_metrics).append(metric)
 
     tables_out: List[Dict[str, Any]] = []
-    for dataset in sm.get("datasets", []):
+    for dataset in datasets:
         table_name = dataset["name"]
         columns = []
         for field in dataset.get("fields", []):
@@ -324,7 +478,9 @@ def build_tmsl_model(
             expr = _get_ansi_expression(metric["expression"])
             measure: Dict[str, Any] = {
                 "name": metric["name"],
-                "expression": sql_to_dax(expr),
+                "expression": sql_to_dax(
+                    expr, column_aliases=column_aliases, default_table=table_name
+                ),
                 "formatString": _guess_format_string(metric.get("datatype")),
             }
             if metric.get("description"):
@@ -353,13 +509,16 @@ def build_tmsl_model(
 
     if unassigned_metrics and tables_out:
         home_table = tables_out[0]
+        home_name = home_table["name"]
         home_table.setdefault("measures", [])
         for metric in unassigned_metrics:
             expr = _get_ansi_expression(metric["expression"])
             home_table["measures"].append(
                 {
                     "name": metric["name"],
-                    "expression": sql_to_dax(expr),
+                    "expression": sql_to_dax(
+                        expr, column_aliases=column_aliases, default_table=home_name
+                    ),
                     "formatString": _guess_format_string(metric.get("datatype")),
                 }
             )
@@ -824,6 +983,7 @@ def evaluate_metrics(ossie_model: Dict[str, Any], synthetic_data: Dict[str, pd.D
     sm = ossie_model["semantic_model"][0]
     table_names = list(synthetic_data.keys())
     relationships = sm.get("relationships", [])
+    column_aliases = _build_column_alias_maps(sm.get("datasets", []))
     results: List[Dict[str, Any]] = []
 
     con = duckdb.connect(database=":memory:")
@@ -832,10 +992,13 @@ def evaluate_metrics(ossie_model: Dict[str, Any], synthetic_data: Dict[str, pd.D
             con.register(name, df)
         for metric in sm.get("metrics", []):
             expr = _get_ansi_expression(metric["expression"])
+            home = _infer_home_table(expr, table_names, column_aliases)
             entry: Dict[str, Any] = {
                 "name": metric["name"],
                 "sql_expression": expr,
-                "dax_expression": sql_to_dax(expr),
+                "dax_expression": sql_to_dax(
+                    expr, column_aliases=column_aliases, default_table=home
+                ),
                 "value": None,
                 "error": None,
             }
