@@ -26,7 +26,7 @@ it immediately with a bundled example data model -- no files required.
   settings** (name/description) at the top, with a small **🌙** dark/light
   toggle next to its header, then a **section** selector (one button per
   section, the active one highlighted) -- **Base Model**, **Enrich Base
-  Model**, **BI Conversions**, **AI Agent Invocation** (placeholder) --
+  Model**, **SPOKE**, **BI Conversions**, **AI Agent Invocation** (placeholder) --
   plus sample data, template downloads, and reset. Everything you
   configure or navigate with lives here in one place, and you can
   collapse it any time to reclaim screen width.
@@ -34,7 +34,7 @@ it immediately with a bundled example data model -- no files required.
   hidden -- it isn't useful for this app and just took up space.
 - Each section shows a small colored badge above its header for quick
   visual identity: **BASE MODEL** (blue), **ENRICH BASE MODEL** (violet),
-  **BI CONVERSIONS** (orange), **AI AGENT INVOCATION** (gray).
+  **SPOKE** (green), **BI CONVERSIONS** (orange), **AI AGENT INVOCATION** (gray).
 - **Dark / light theme**: toggle any time without losing your place --
   the current model, generated YAML, and selected section all persist
   across the switch. This is a thorough CSS re-theme (backgrounds, cards,
@@ -85,6 +85,19 @@ has, and **appends** any `Custom Extension` value as a brand-new
 `custom_extensions` entry. This lets a business/domain reviewer layer on
 context without clobbering what the base generation (or a previous
 enrichment pass) already produced.
+
+### SPOKE -- attach SQL → LLM Gateway → model enrichment
+
+Once a base YAML exists, **SPOKE** lets you attach a `.sql` file of
+approved query logic. That SQL is **always** sent to the external **LLM
+Gateway** (`LLM_GATEWAY_URL`, optional `LLM_GATEWAY_TOKEN`) at
+`POST /v1/sql-to-instruction`. The gateway returns an **instruction**;
+this app stores it as JSON on a **model-level** `custom_extensions`
+entry (`vendor_name: SPOKE`) and also concatenates it onto model
+`ai_context.instructions`. This is additive enrichment for downstream
+AI / text-to-SQL consumers of the same Ossie model. If
+`LLM_GATEWAY_URL` is unset, a local fallback still produces a valid
+instruction payload so the UI can be exercised offline.
 
 ### BI Conversions -- export to a BI tool (optional)
 
@@ -414,6 +427,7 @@ standard Ossie `custom_extensions` block instead of being dropped:
 | File 2 `Custom Extension` rows | `datasets[].custom_extensions` (table-level) or `datasets[].fields[].custom_extensions` (field-level) |
 | Relationships file | native `semantic_model[].relationships[]` |
 | File 4 AI context (Enrich Base Model) | concatenated into `ai_context` + appended into `custom_extensions` (`vendor_name: AI_ENRICHMENT`) at model / dataset / field level |
+| SPOKE `.sql` (LLM Gateway) | model-level `custom_extensions` (`vendor_name: SPOKE`, JSON with `instruction` + SQL) + concatenated onto model `ai_context.instructions` |
 
 The generated YAML is validated against the official Ossie JSON Schema
 (`schema/ossie-schema.json`, fetched from the
@@ -425,17 +439,19 @@ every time it changes, and the app reports any validation errors inline.
 ```
 app.py                            Streamlit UI (sidebar settings/nav, center = active section, right = Ossie YAML)
 ossie_builder.py                  Ossie parsing + YAML generation/merge logic (framework-free, unit-tested)
+llm_gateway.py                    SPOKE client for external LLM Gateway (SQL → instruction JSON)
 powerbi_export.py                 Ossie -> Power BI (TMSL/TMDL) conversion + synthetic-data metric preview
 fabric_deploy.py                  Headless Fabric REST API deployment (no Power BI Desktop required)
 git_registry.py                   Save/load models to a GitHub-backed registry repo (GitHub Contents API)
 schema/ossie-schema.json           Official Apache Ossie JSON Schema (bundled for validation)
-sample_data/                       Example input files (Account/Position data model)
+sample_data/                       Example input files (Account/Position data model) + SPOKE sample SQL
 scripts/generate_sample_data.py    Regenerates the sample_data/ files
 tests/test_ossie_builder.py        Pytest suite: base generation + AI-context enrichment merge behavior
+tests/test_sql_spoke.py            Pytest suite: LLM gateway client + SPOKE model enrichment
 tests/test_powerbi_export.py       Pytest suite: SQL->DAX translation, TMSL/TMDL output, metric preview
 tests/test_fabric_deploy.py        Pytest suite: Fabric API payload construction + mocked deploy/poll flows
 tests/test_git_registry.py         Pytest suite: registry list/load/save (create vs. overwrite) + error paths
-.env.example                       Template for GIT_REGISTRY_TOKEN and related settings (copy to .env)
+.env.example                       Template for GIT_REGISTRY_* and LLM_GATEWAY_* settings (copy to .env)
 .streamlit/config.toml             Dev server port/config + color theme
 ```
 

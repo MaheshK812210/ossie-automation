@@ -4,14 +4,14 @@ builder.
 Layout
 ------
 - Sidebar (collapsible): model name/description settings, a section
-  selector (Base Model, Enrich Base Model, BI Conversions, AI Agent
+  selector (Base Model, Enrich Base Model, SPOKE, BI Conversions, AI Agent
   Invocation -- placeholder), sample data, template downloads, and reset.
   Everything you configure or navigate with lives in one place here.
 - Main area, center column: renders whichever section is currently
   selected in the sidebar.
 - Main area, right column ("Ossie" section): a persistent, always-visible
   YAML view/edit panel, shared by every section -- whatever the Base Model
-  section generates, or the Enrich section enriches, shows up here
+  section generates, or the Enrich / SPOKE sections enrich, shows up here
   immediately. It can be expanded to full screen with the \u00ab / \u00bb
   toggle (which hides the center column so the YAML can take up almost the
   full page width).
@@ -35,6 +35,7 @@ from streamlit_tree_select import tree_select
 
 import fabric_deploy as fd
 import git_registry as gitreg
+import llm_gateway as llmgw
 import ossie_builder as ob
 import powerbi_export as pbe
 
@@ -49,6 +50,7 @@ SAMPLE_FILES = {
     "enrichment": "02_metrics_synonyms_extensions.csv",
     "relationships": "03_relationships.csv",
     "ai_context": "04_ai_context.csv",
+    "spoke_sql": "05_spoke_market_value_by_client.sql",
 }
 
 DATATYPE_COLORS = {
@@ -67,15 +69,17 @@ DATATYPE_COLORS = {
 SECTIONS = [
     ("base_model", "\U0001f4e6 Base Model"),
     ("enrich", "\U0001f9e9 Enrich Base Model"),
+    ("spoke", "\U0001f6e0\ufe0f SPOKE"),
     ("bi", "\U0001f504 BI Conversions"),
     ("ai_agent", "\U0001f916 AI Agent Invocation"),
 ]
 
-# Only these two sections save/load against the model registry -- Base
-# Model writes/reads basemodel/, Enrich Base Model writes/reads AIEnrich/.
+# Only these sections save/load against the model registry -- Base
+# Model writes/reads basemodel/, Enrich + SPOKE write/read AIEnrich/.
 REGISTRY_DIR_BY_SECTION = {
     "base_model": gitreg.BASE_MODEL_DIR,
     "enrich": gitreg.AI_ENRICH_DIR,
+    "spoke": gitreg.AI_ENRICH_DIR,
 }
 
 st.set_page_config(
@@ -571,12 +575,11 @@ def _render_yaml_panel(height: int, fullscreen: bool):
 
 def _render_registry_section():
     """Save/load the current YAML to/from the GitHub-backed model registry
-    (see git_registry.py). Only shown for the Base Model and Enrich Base
-    Model sections -- each saves/loads its own directory in the registry
-    repo (basemodel/ and AIEnrich/ respectively). The model name field
-    (sidebar) determines the saved file name; saving always overwrites
-    that file ("last write wins") -- git's own commit history on the
-    registry repo is the version log.
+    (see git_registry.py). Shown for Base Model, Enrich Base Model, and
+    SPOKE -- Base saves/loads basemodel/; Enrich and SPOKE use AIEnrich/.
+    The model name field (sidebar) determines the saved file name; saving
+    always overwrites that file ("last write wins") -- git's own commit
+    history on the registry repo is the version log.
 
     **Load is available even before any model has been generated** -- you
     don't need to build a new base model first just to open and edit one
@@ -947,6 +950,106 @@ def _render_enrich_section():
 
 
 # ---------------------------------------------------------------------------
+# Center pane -- SPOKE section (SQL attach → LLM gateway → model enrichment)
+# ---------------------------------------------------------------------------
+
+def _render_spoke_section():
+    st.badge("SPOKE", color="green")
+    st.header("\U0001f6e0\ufe0f SPOKE")
+
+    if st.session_state.model is None:
+        st.caption(
+            "Generate a base YAML in the **Base Model** tab first \u2014 SPOKE unlocks once a "
+            "model exists to enrich."
+        )
+        return
+
+    st.caption(
+        "Attach a `.sql` file of approved query logic. SPOKE **always** sends it to the "
+        "**LLM Gateway** (configure `LLM_GATEWAY_URL`), which returns an **instruction**. "
+        "That instruction is stored as JSON on a **model-level** `custom_extensions` entry "
+        "(`vendor_name: SPOKE`) and concatenated onto model `ai_context.instructions` — "
+        "additive enrichment for downstream AI / text-to-SQL consumers."
+    )
+
+    if llmgw.gateway_configured():
+        st.caption(f"LLM Gateway: configured (`LLM_GATEWAY_URL` is set).")
+    else:
+        st.warning(
+            "`LLM_GATEWAY_URL` is not set — SPOKE will still run using the local gateway "
+            "fallback so you can develop offline. Point `LLM_GATEWAY_URL` at your real "
+            "gateway for production parsing.",
+            icon="\u26a0\ufe0f",
+        )
+
+    sql_cols = st.columns([2, 1])
+    with sql_cols[0]:
+        sql_upload = st.file_uploader(
+            "SQL file",
+            type=["sql"],
+            key="spoke_sql_upload",
+            help="Only .sql files. Contents are always parsed via the LLM gateway.",
+        )
+    with sql_cols[1]:
+        st.write("")
+        st.write("")
+        if st.button("Use sample SQL file", key="spoke_use_sample"):
+            st.session_state.use_sample_spoke_sql = True
+
+    use_sample = st.session_state.get("use_sample_spoke_sql", False)
+    sql_text = ""
+    sql_filename = ""
+    if use_sample:
+        st.info("Using the bundled sample SPOKE SQL file.", icon="\u2139\ufe0f")
+        path = os.path.join(SAMPLE_DIR, SAMPLE_FILES["spoke_sql"])
+        with open(path, "r", encoding="utf-8") as f:
+            sql_text = f.read()
+        sql_filename = SAMPLE_FILES["spoke_sql"]
+    elif sql_upload is not None:
+        raw = sql_upload.getvalue()
+        sql_text = raw.decode("utf-8", errors="replace")
+        sql_filename = sql_upload.name or "attached.sql"
+
+    if sql_text:
+        with st.expander("Preview SQL", expanded=False):
+            st.code(sql_text, language="sql")
+
+        if st.button(
+            "\U0001f9e0 Parse SQL via LLM Gateway & enrich model",
+            type="primary",
+            key="spoke_enrich_btn",
+        ):
+            try:
+                enrichment = llmgw.parse_sql_to_enrichment(
+                    sql_text,
+                    filename=sql_filename,
+                    model_name=_current_model_name(),
+                )
+                enriched = ob.merge_sql_spoke_into_model(st.session_state.model, enrichment)
+                st.session_state["_pending_model"] = enriched
+                st.session_state["spoke_message"] = (
+                    f"SPOKE enrichment applied from `{sql_filename}` — model-level "
+                    f"`custom_extensions` (vendor SPOKE) now includes the LLM instruction JSON."
+                )
+                st.session_state["spoke_last_enrichment"] = enrichment
+                st.session_state.use_sample_spoke_sql = False
+                st.rerun()
+            except Exception as e:  # noqa: BLE001
+                st.error(f"SPOKE enrichment failed: {e}")
+                with st.expander("Show details"):
+                    st.code(traceback.format_exc())
+
+    if st.session_state.get("spoke_message"):
+        st.success(st.session_state.spoke_message)
+        st.session_state.spoke_message = None
+
+    last = st.session_state.get("spoke_last_enrichment")
+    if last:
+        with st.expander("Last SPOKE enrichment JSON", expanded=False):
+            st.json(last)
+
+
+# ---------------------------------------------------------------------------
 # Center pane -- BI Conversions section (was "Stage 3")
 # ---------------------------------------------------------------------------
 
@@ -1272,13 +1375,17 @@ column references).
 2. **Enrich Base Model**: uploaded later, merges into whatever base YAML
    currently exists (freshly generated *or* hand-edited in the Ossie
    panel). It only **adds**.
-3. **BI Conversions**: converts the current model into a target BI tool's
+3. **SPOKE**: attach a `.sql` file; it is **always** parsed by the LLM
+   Gateway into an **instruction**, stored as model-level
+   `custom_extensions` JSON (`vendor_name: SPOKE`) and concatenated onto
+   model `ai_context.instructions`.
+4. **BI Conversions**: converts the current model into a target BI tool's
    own semantic model format. Only **Power BI** is implemented -- it
    produces real TMSL (`model.bim`) and a TMDL-based Power BI Project,
    deployable via Power BI Desktop or headlessly via the Fabric REST API,
    with a local synthetic-data preview of the DAX measures. Tableau shows
    as a planned option, not yet built.
-4. **AI Agent Invocation**: placeholder for a future AI agent integration.
+5. **AI Agent Invocation**: placeholder for a future AI agent integration.
 
 **Mapping summary**
 
@@ -1302,6 +1409,8 @@ column references).
   (also visualized as a diagram)
 - File 4 AI context (Enrich Base Model) &rarr; concatenated into
   `ai_context` + appended into `custom_extensions` (`vendor_name: AI_ENRICHMENT`)
+- SPOKE `.sql` &rarr; LLM Gateway instruction JSON on model
+  `custom_extensions` (`vendor_name: SPOKE`) + model `ai_context.instructions`
             """
         )
 
@@ -1312,9 +1421,12 @@ column references).
 
 st.session_state.setdefault("use_sample_base", False)
 st.session_state.setdefault("use_sample_ai_context", False)
+st.session_state.setdefault("use_sample_spoke_sql", False)
 st.session_state.setdefault("model", None)
 st.session_state.setdefault("yaml_editor", "")
 st.session_state.setdefault("enrichment_message", None)
+st.session_state.setdefault("spoke_message", None)
+st.session_state.setdefault("spoke_last_enrichment", None)
 st.session_state.setdefault("yaml_fullscreen", False)
 st.session_state.setdefault("yaml_panel_tall", False)
 st.session_state.setdefault("pbi_export", None)
@@ -1397,12 +1509,14 @@ with st.sidebar:
             ("enrichment", "2. Metrics, synonyms & custom extensions"),
             ("relationships", "3. Relationships"),
             ("ai_context", "4. AI context enrichment"),
+            ("spoke_sql", "5. SPOKE sample SQL"),
         ]:
+            mime = "application/sql" if key == "spoke_sql" else "text/csv"
             st.download_button(
-                label=f"⬇️ {label} sample CSV",
+                label=f"⬇️ {label}",
                 data=_read_sample(key),
                 file_name=SAMPLE_FILES[key],
-                mime="text/csv",
+                mime=mime,
                 use_container_width=True,
                 key=f"dl_{key}",
             )
@@ -1417,6 +1531,9 @@ with st.sidebar:
         st.session_state.validation_result = None
         st.session_state.use_sample_base = False
         st.session_state.use_sample_ai_context = False
+        st.session_state.use_sample_spoke_sql = False
+        st.session_state.spoke_message = None
+        st.session_state.spoke_last_enrichment = None
         st.session_state.pbi_export = None
         st.session_state.pbi_metric_preview = None
         st.session_state.fabric_deploy_result = None
@@ -1432,7 +1549,7 @@ st.markdown(
     """
 <div class="ossie-hero">
   <h1>🧬 Apache Ossie Semantic Model Builder</h1>
-  <p>Pick a section in the sidebar -- <b>Base Model</b>, <b>Enrich Base Model</b>, <b>BI
+  <p>Pick a section in the sidebar -- <b>Base Model</b>, <b>Enrich Base Model</b>, <b>SPOKE</b>, <b>BI
   Conversions</b>, or <b>AI Agent Invocation</b> -- and its details appear on the left.
   The <b>Ossie</b> panel on the right always shows the current YAML, live, with a
   <code>\u00ab</code>/<code>\u00bb</code> toggle to expand it to full screen.</p>
@@ -1457,6 +1574,8 @@ else:
             _render_base_model_section()
         elif active_section == "enrich":
             _render_enrich_section()
+        elif active_section == "spoke":
+            _render_spoke_section()
         elif active_section == "bi":
             _render_bi_section()
         elif active_section == "ai_agent":

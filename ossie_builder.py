@@ -1084,6 +1084,52 @@ def merge_ai_context_into_model(
     return new_model
 
 
+SPOKE_VENDOR_NAME = "SPOKE"
+
+
+def append_model_custom_extension(
+    model: Dict[str, Any],
+    vendor_name: str,
+    data: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Return a NEW model with ``data`` appended as a model-level
+    ``custom_extensions`` entry (``data`` stored as a JSON string per Ossie).
+    """
+    new_model = copy.deepcopy(model)
+    entries = new_model.get("semantic_model") or []
+    if not entries:
+        raise ValueError("Model has no semantic_model entry to enrich.")
+    sm = entries[0]
+    extensions = list(sm.get("custom_extensions") or [])
+    extensions.append(make_custom_extension(vendor_name, data))
+    sm["custom_extensions"] = extensions
+    return new_model
+
+
+def merge_sql_spoke_into_model(
+    model: Dict[str, Any],
+    enrichment: Dict[str, Any],
+) -> Dict[str, Any]:
+    """SPOKE enrichment: attach LLM-produced SQL instruction JSON as a
+    **model-level** ``custom_extensions`` entry (``vendor_name: SPOKE``).
+
+    Also concatenates ``enrichment["instruction"]`` onto model-level
+    ``ai_context.instructions`` so LLM consumers that read ``ai_context``
+    see the same guidance without parsing the extension. Additive only.
+    """
+    if not enrichment or not str(enrichment.get("instruction") or "").strip():
+        raise ValueError("SPOKE enrichment requires a non-empty 'instruction'.")
+
+    new_model = append_model_custom_extension(model, SPOKE_VENDOR_NAME, enrichment)
+    sm = new_model["semantic_model"][0]
+    instruction = str(enrichment["instruction"]).strip()
+    stub = AiContextEntry(instructions=instruction)
+    merged = _merge_ai_context_block(sm.get("ai_context"), stub)
+    if merged:
+        sm["ai_context"] = merged
+    return new_model
+
+
 # ---------------------------------------------------------------------------
 # YAML rendering / parsing
 # ---------------------------------------------------------------------------
