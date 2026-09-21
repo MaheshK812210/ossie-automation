@@ -1,0 +1,1475 @@
+# Generated Apache Ossie ontology (concepts + mappings)
+# Spec: https://github.com/apache/ossie/blob/main/ontology/ontology.md
+# yaml-language-server: $schema=./ontology.json
+version: 0.2.0.dev0
+name: account_position_model_ontology
+description: Investment account and position semantic model
+ontology:
+- concept: ClientId
+  type: ValueType
+  extends:
+  - Decimal
+  description: Unique surrogate identifier for a client or household.
+- concept: ClientName
+  type: ValueType
+  extends:
+  - String
+  description: Legal name of the client or household.
+- concept: ClientType
+  type: ValueType
+  extends:
+  - String
+  description: Classification of the client, e.g. Individual or Institutional.
+- concept: TaxId
+  type: ValueType
+  extends:
+  - String
+  description: Government tax identifier (e.g. SSN/EIN) associated with the client.
+- concept: OnboardingDate
+  type: ValueType
+  extends:
+  - Date
+  description: Date the client relationship was established.
+- concept: RiskProfile
+  type: ValueType
+  extends:
+  - String
+  description: Client's stated investment risk tolerance.
+- concept: CountryCode
+  type: ValueType
+  extends:
+  - String
+  description: ISO country code of the client's residence.
+- concept: AccountId
+  type: ValueType
+  extends:
+  - Decimal
+  description: Unique surrogate identifier for an investment account.
+- concept: AccountNumber
+  type: ValueType
+  extends:
+  - String
+  description: Business/customer-facing account number.
+- concept: AccountType
+  type: ValueType
+  extends:
+  - String
+  description: Account wrapper type, e.g. Brokerage, IRA, 401k, Trust.
+- concept: AccountStatus
+  type: ValueType
+  extends:
+  - String
+  description: Current lifecycle status of the account.
+- concept: OpenDate
+  type: ValueType
+  extends:
+  - Date
+  description: Date the account was opened.
+- concept: CloseDate
+  type: ValueType
+  extends:
+  - Date
+  description: Date the account was closed, if applicable.
+- concept: BaseCurrency
+  type: ValueType
+  extends:
+  - String
+  description: ISO currency code the account is denominated in.
+- concept: CustodianName
+  type: ValueType
+  extends:
+  - String
+  description: Name of the custodian holding the account's assets.
+- concept: AdvisorName
+  type: ValueType
+  extends:
+  - String
+  description: Name of the financial advisor servicing the account.
+- concept: SecurityId
+  type: ValueType
+  extends:
+  - Decimal
+  description: Unique surrogate identifier for a security/instrument.
+- concept: SecuritySymbol
+  type: ValueType
+  extends:
+  - String
+  description: Exchange ticker symbol for the security.
+- concept: Cusip
+  type: ValueType
+  extends:
+  - String
+  description: CUSIP identifier for the security.
+- concept: SecurityName
+  type: ValueType
+  extends:
+  - String
+  description: Full descriptive name of the security.
+- concept: SecurityType
+  type: ValueType
+  extends:
+  - String
+  description: Instrument type, e.g. Equity, Bond, ETF, Mutual Fund, Cash.
+- concept: AssetClass
+  type: ValueType
+  extends:
+  - String
+  description: Broad asset class grouping for the security.
+- concept: Sector
+  type: ValueType
+  extends:
+  - String
+  description: Industry sector classification of the issuer.
+- concept: Currency
+  type: ValueType
+  extends:
+  - String
+  description: ISO currency code the security is priced in.
+- concept: IssueDate
+  type: ValueType
+  extends:
+  - Date
+  description: Date the security was issued.
+- concept: DateId
+  type: ValueType
+  extends:
+  - Decimal
+  description: Surrogate key for the date, formatted YYYYMMDD.
+- concept: CalendarDate
+  type: ValueType
+  extends:
+  - Date
+  description: The calendar date value.
+- concept: CalendarYear
+  type: ValueType
+  extends:
+  - Decimal
+  description: Four-digit calendar year.
+- concept: CalendarQuarter
+  type: ValueType
+  extends:
+  - Decimal
+  description: Calendar quarter number (1-4).
+- concept: CalendarMonth
+  type: ValueType
+  extends:
+  - Decimal
+  description: Calendar month number (1-12).
+- concept: MonthName
+  type: ValueType
+  extends:
+  - String
+  description: Full name of the calendar month.
+- concept: DayOfWeekName
+  type: ValueType
+  extends:
+  - String
+  description: Full name of the day of week.
+- concept: IsMonthEnd
+  type: ValueType
+  extends:
+  - String
+  description: Flag indicating whether the date is the last day of the month.
+- concept: IsTradingDay
+  type: ValueType
+  extends:
+  - String
+  description: Flag indicating whether markets were open on the date.
+- concept: AsOfDateId
+  type: ValueType
+  extends:
+  - Decimal
+  description: Foreign key to the snapshot date (DIM_DATE).
+- concept: Quantity
+  type: ValueType
+  extends:
+  - Decimal
+  description: Number of units/shares of the security held.
+- concept: MarketPrice
+  type: ValueType
+  extends:
+  - Decimal
+  description: Price per unit as of the snapshot date, in local currency.
+- concept: MarketValue
+  type: ValueType
+  extends:
+  - Decimal
+  description: Total market value of the position (QUANTITY x MARKET_PRICE).
+- concept: CostBasis
+  type: ValueType
+  extends:
+  - Decimal
+  description: Total cost basis of the position.
+- concept: UnrealizedGainLoss
+  type: ValueType
+  extends:
+  - Decimal
+  description: MARKET_VALUE minus COST_BASIS.
+- concept: LocalCurrency
+  type: ValueType
+  extends:
+  - String
+  description: ISO currency code of the monetary amounts on this row.
+- concept: PositionSourceSystem
+  type: ValueType
+  extends:
+  - String
+  description: System of record that supplied this position record.
+- concept: Client
+  type: EntityType
+  extends:
+  - Any
+  description: Dimension Table from dataset DIM_CLIENT
+  identify_by:
+  - id
+  relationships:
+  - name: id
+    roles:
+    - concept: ClientId
+    multiplicity: OneToOne
+    verbalizes:
+    - '{Client} is identified by {ClientId}'
+  - name: client_name
+    description: Legal name of the client or household.
+    roles:
+    - concept: ClientName
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Client} has {ClientName}'
+  - name: client_type
+    description: Classification of the client, e.g. Individual or Institutional.
+    roles:
+    - concept: ClientType
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Client} has {ClientType}'
+  - name: tax
+    description: Government tax identifier (e.g. SSN/EIN) associated with the client.
+    roles:
+    - concept: TaxId
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Client} has {TaxId}'
+  - name: onboarding_date
+    description: Date the client relationship was established.
+    roles:
+    - concept: OnboardingDate
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Client} has {OnboardingDate}'
+  - name: risk_profile
+    description: Client's stated investment risk tolerance.
+    roles:
+    - concept: RiskProfile
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Client} has {RiskProfile}'
+  - name: country_code
+    description: ISO country code of the client's residence.
+    roles:
+    - concept: CountryCode
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Client} has {CountryCode}'
+- concept: Account
+  type: EntityType
+  extends:
+  - Any
+  description: Dimension Table from dataset DIM_ACCOUNT
+  identify_by:
+  - id
+  relationships:
+  - name: id
+    roles:
+    - concept: AccountId
+    multiplicity: OneToOne
+    verbalizes:
+    - '{Account} is identified by {AccountId}'
+  - name: account_number
+    description: Business/customer-facing account number.
+    roles:
+    - concept: AccountNumber
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Account} has {AccountNumber}'
+  - name: account_type
+    description: Account wrapper type, e.g. Brokerage, IRA, 401k, Trust.
+    roles:
+    - concept: AccountType
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Account} has {AccountType}'
+  - name: account_status
+    description: Current lifecycle status of the account.
+    roles:
+    - concept: AccountStatus
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Account} has {AccountStatus}'
+  - name: open_date
+    description: Date the account was opened.
+    roles:
+    - concept: OpenDate
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Account} has {OpenDate}'
+  - name: close_date
+    description: Date the account was closed, if applicable.
+    roles:
+    - concept: CloseDate
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Account} has {CloseDate}'
+  - name: base_currency
+    description: ISO currency code the account is denominated in.
+    roles:
+    - concept: BaseCurrency
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Account} has {BaseCurrency}'
+  - name: custodian_name
+    description: Name of the custodian holding the account's assets.
+    roles:
+    - concept: CustodianName
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Account} has {CustodianName}'
+  - name: advisor_name
+    description: Name of the financial advisor servicing the account.
+    roles:
+    - concept: AdvisorName
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Account} has {AdvisorName}'
+  - name: owned_by
+    roles:
+    - concept: Client
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Account} is owned by {Client}'
+- concept: Security
+  type: EntityType
+  extends:
+  - Any
+  description: Dimension Table from dataset DIM_SECURITY
+  identify_by:
+  - id
+  relationships:
+  - name: id
+    roles:
+    - concept: SecurityId
+    multiplicity: OneToOne
+    verbalizes:
+    - '{Security} is identified by {SecurityId}'
+  - name: security_symbol
+    description: Exchange ticker symbol for the security.
+    roles:
+    - concept: SecuritySymbol
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Security} has {SecuritySymbol}'
+  - name: cusip
+    description: CUSIP identifier for the security.
+    roles:
+    - concept: Cusip
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Security} has {Cusip}'
+  - name: security_name
+    description: Full descriptive name of the security.
+    roles:
+    - concept: SecurityName
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Security} has {SecurityName}'
+  - name: security_type
+    description: Instrument type, e.g. Equity, Bond, ETF, Mutual Fund, Cash.
+    roles:
+    - concept: SecurityType
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Security} has {SecurityType}'
+  - name: asset_class
+    description: Broad asset class grouping for the security.
+    roles:
+    - concept: AssetClass
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Security} has {AssetClass}'
+  - name: sector
+    description: Industry sector classification of the issuer.
+    roles:
+    - concept: Sector
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Security} has {Sector}'
+  - name: currency
+    description: ISO currency code the security is priced in.
+    roles:
+    - concept: Currency
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Security} has {Currency}'
+  - name: issue_date
+    description: Date the security was issued.
+    roles:
+    - concept: IssueDate
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Security} has {IssueDate}'
+- concept: CalendarDay
+  type: EntityType
+  extends:
+  - Any
+  description: Dimension Table from dataset DIM_DATE
+  identify_by:
+  - id
+  relationships:
+  - name: id
+    roles:
+    - concept: DateId
+    multiplicity: OneToOne
+    verbalizes:
+    - '{CalendarDay} is identified by {DateId}'
+  - name: calendar_date
+    description: The calendar date value.
+    roles:
+    - concept: CalendarDate
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{CalendarDay} has {CalendarDate}'
+  - name: calendar_year
+    description: Four-digit calendar year.
+    roles:
+    - concept: CalendarYear
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{CalendarDay} has {CalendarYear}'
+  - name: calendar_quarter
+    description: Calendar quarter number (1-4).
+    roles:
+    - concept: CalendarQuarter
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{CalendarDay} has {CalendarQuarter}'
+  - name: calendar_month
+    description: Calendar month number (1-12).
+    roles:
+    - concept: CalendarMonth
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{CalendarDay} has {CalendarMonth}'
+  - name: month_name
+    description: Full name of the calendar month.
+    roles:
+    - concept: MonthName
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{CalendarDay} has {MonthName}'
+  - name: day_of_week_name
+    description: Full name of the day of week.
+    roles:
+    - concept: DayOfWeekName
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{CalendarDay} has {DayOfWeekName}'
+  - name: is_month_end
+    description: Flag indicating whether the date is the last day of the month.
+    roles:
+    - concept: IsMonthEnd
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{CalendarDay} has {IsMonthEnd}'
+  - name: is_trading_day
+    description: Flag indicating whether markets were open on the date.
+    roles:
+    - concept: IsTradingDay
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{CalendarDay} has {IsTradingDay}'
+- concept: Position
+  type: EntityType
+  extends:
+  - Any
+  description: Fact Table from dataset FACT_POSITION
+  identify_by:
+  - account
+  - security
+  - as_of_date
+  relationships:
+  - name: account
+    roles:
+    - concept: AccountId
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Position} has {AccountId} as part of its identity'
+  - name: security
+    roles:
+    - concept: SecurityId
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Position} has {SecurityId} as part of its identity'
+  - name: as_of_date
+    roles:
+    - concept: AsOfDateId
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Position} has {AsOfDateId} as part of its identity'
+  - name: quantity
+    description: Number of units/shares of the security held.
+    roles:
+    - concept: Quantity
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Position} has {Quantity}'
+  - name: market_price
+    description: Price per unit as of the snapshot date, in local currency.
+    roles:
+    - concept: MarketPrice
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Position} has {MarketPrice}'
+  - name: market_value
+    description: Total market value of the position (QUANTITY x MARKET_PRICE).
+    roles:
+    - concept: MarketValue
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Position} has {MarketValue}'
+  - name: cost_basis
+    description: Total cost basis of the position.
+    roles:
+    - concept: CostBasis
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Position} has {CostBasis}'
+  - name: unrealized_gain_loss
+    description: MARKET_VALUE minus COST_BASIS.
+    roles:
+    - concept: UnrealizedGainLoss
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Position} has {UnrealizedGainLoss}'
+  - name: local_currency
+    description: ISO currency code of the monetary amounts on this row.
+    roles:
+    - concept: LocalCurrency
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Position} has {LocalCurrency}'
+  - name: position_source_system
+    description: System of record that supplied this position record.
+    roles:
+    - concept: PositionSourceSystem
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Position} has {PositionSourceSystem}'
+  - name: belongs_to_account
+    roles:
+    - concept: Account
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Position} belongs to {Account}'
+  - name: holds_security
+    roles:
+    - concept: Security
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Position} holds {Security}'
+  - name: as_of
+    roles:
+    - concept: CalendarDay
+    multiplicity: ManyToOne
+    verbalizes:
+    - '{Position} is as of {CalendarDay}'
+ontology_mappings:
+- name: account_position_model_logical_map
+  description: Maps semantic model `account_position_model` datasets/fields onto ontology concepts.
+  semantic_model:
+    name: account_position_model
+    description: Investment account and position semantic model
+    datasets:
+    - name: DIM_CLIENT
+      source: WEALTH_DB.PUBLIC.DIM_CLIENT
+      primary_key:
+      - CLIENT_ID
+      fields:
+      - name: CLIENT_ID
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: CLIENT_ID
+        datatype: Decimal
+        description: Unique surrogate identifier for a client or household.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(10)", "size": "10", "column_position": 1, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column CLNT_SK.", "source_column_name": "CLNT_SK", "primary_key_name": "PK_DIM_CLIENT"}'
+      - name: CLIENT_NAME
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: CLIENT_NAME
+        datatype: String
+        description: Legal name of the client or household.
+        ai_context:
+          synonyms:
+          - client name
+          - customer name
+          - household name
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(200)", "size": "200", "column_position": 2, "is_nullable":
+            false, "contains_pii": true, "description_from_source_system": "Documented in the source warehouse
+            as column CLNT_NM.", "source_column_name": "CLNT_NM"}'
+      - name: CLIENT_TYPE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: CLIENT_TYPE
+        datatype: String
+        description: Classification of the client, e.g. Individual or Institutional.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(20)", "size": "20", "column_position": 3, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column CLNT_TYP_CD.", "source_column_name": "CLNT_TYP_CD"}'
+      - name: TAX_ID
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: TAX_ID
+        datatype: String
+        description: Government tax identifier (e.g. SSN/EIN) associated with the client.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(20)", "size": "20", "column_position": 4, "is_nullable":
+            true, "contains_pii": true, "description_from_source_system": "Documented in the source warehouse
+            as column TAX_ID_NBR.", "source_column_name": "TAX_ID_NBR"}'
+      - name: ONBOARDING_DATE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: ONBOARDING_DATE
+        datatype: Date
+        description: Date the client relationship was established.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "DATE", "column_position": 5, "is_nullable": false, "contains_pii":
+            false, "description_from_source_system": "Documented in the source warehouse as column ONBRD_DT.",
+            "source_column_name": "ONBRD_DT"}'
+      - name: RISK_PROFILE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: RISK_PROFILE
+        datatype: String
+        description: Client's stated investment risk tolerance.
+        ai_context:
+          synonyms:
+          - risk tolerance
+          - investor risk level
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(20)", "size": "20", "column_position": 6, "is_nullable":
+            true, "contains_pii": false, "description_from_source_system": "Documented in the source warehouse
+            as column RISK_PRFL_CD.", "source_column_name": "RISK_PRFL_CD"}'
+      - name: COUNTRY_CODE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: COUNTRY_CODE
+        datatype: String
+        description: ISO country code of the client's residence.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(3)", "size": "3", "column_position": 7, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column CNTRY_CD.", "source_column_name": "CNTRY_CD"}'
+      custom_extensions:
+      - vendor_name: COMMON
+        data: '{"asset_type": "Dimension Table", "pii_columns": ["CLIENT_NAME", "TAX_ID"]}'
+    - name: DIM_ACCOUNT
+      source: WEALTH_DB.PUBLIC.DIM_ACCOUNT
+      primary_key:
+      - ACCOUNT_ID
+      fields:
+      - name: ACCOUNT_ID
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: ACCOUNT_ID
+        datatype: Decimal
+        description: Unique surrogate identifier for an investment account.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(10)", "size": "10", "column_position": 1, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column ACCT_SK.", "source_column_name": "ACCT_SK", "primary_key_name": "PK_DIM_ACCOUNT"}'
+      - name: ACCOUNT_NUMBER
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: ACCOUNT_NUMBER
+        datatype: String
+        description: Business/customer-facing account number.
+        ai_context:
+          synonyms:
+          - account number
+          - acct no
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(30)", "size": "30", "column_position": 2, "is_nullable":
+            false, "contains_pii": true, "description_from_source_system": "Documented in the source warehouse
+            as column ACCT_NBR.", "source_column_name": "ACCT_NBR"}'
+        - vendor_name: COMMON
+          data: '{"masking_policy": "MASK_ACCOUNT_NUMBER"}'
+      - name: CLIENT_ID
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: CLIENT_ID
+        datatype: Decimal
+        description: Foreign key to the owning client (DIM_CLIENT).
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(10)", "size": "10", "column_position": 3, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column CLNT_SK.", "source_column_name": "CLNT_SK"}'
+      - name: ACCOUNT_TYPE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: ACCOUNT_TYPE
+        datatype: String
+        description: Account wrapper type, e.g. Brokerage, IRA, 401k, Trust.
+        ai_context:
+          synonyms:
+          - account category
+          - wrapper type
+          - plan type
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(30)", "size": "30", "column_position": 4, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column ACCT_TYP_CD.", "source_column_name": "ACCT_TYP_CD"}'
+      - name: ACCOUNT_STATUS
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: ACCOUNT_STATUS
+        datatype: String
+        description: Current lifecycle status of the account.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(15)", "size": "15", "column_position": 5, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column ACCT_STS_CD.", "source_column_name": "ACCT_STS_CD"}'
+      - name: OPEN_DATE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: OPEN_DATE
+        datatype: Date
+        description: Date the account was opened.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "DATE", "column_position": 6, "is_nullable": false, "contains_pii":
+            false, "description_from_source_system": "Documented in the source warehouse as column OPEN_DT.",
+            "source_column_name": "OPEN_DT"}'
+      - name: CLOSE_DATE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: CLOSE_DATE
+        datatype: Date
+        description: Date the account was closed, if applicable.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "DATE", "column_position": 7, "is_nullable": true, "contains_pii":
+            false, "description_from_source_system": "Documented in the source warehouse as column CLOSE_DT.",
+            "source_column_name": "CLOSE_DT"}'
+      - name: BASE_CURRENCY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: BASE_CURRENCY
+        datatype: String
+        description: ISO currency code the account is denominated in.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(3)", "size": "3", "column_position": 8, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column BASE_CCY_CD.", "source_column_name": "BASE_CCY_CD"}'
+      - name: CUSTODIAN_NAME
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: CUSTODIAN_NAME
+        datatype: String
+        description: Name of the custodian holding the account's assets.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(100)", "size": "100", "column_position": 9, "is_nullable":
+            true, "contains_pii": false, "description_from_source_system": "Documented in the source warehouse
+            as column CUST_NM.", "source_column_name": "CUST_NM"}'
+      - name: ADVISOR_NAME
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: ADVISOR_NAME
+        datatype: String
+        description: Name of the financial advisor servicing the account.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(100)", "size": "100", "column_position": 10, "is_nullable":
+            true, "contains_pii": true, "description_from_source_system": "Documented in the source warehouse
+            as column ADVSR_NM.", "source_column_name": "ADVSR_NM"}'
+      custom_extensions:
+      - vendor_name: COMMON
+        data: '{"asset_type": "Dimension Table", "pii_columns": ["ACCOUNT_NUMBER", "ADVISOR_NAME"]}'
+    - name: DIM_SECURITY
+      source: WEALTH_DB.PUBLIC.DIM_SECURITY
+      primary_key:
+      - SECURITY_ID
+      fields:
+      - name: SECURITY_ID
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: SECURITY_ID
+        datatype: Decimal
+        description: Unique surrogate identifier for a security/instrument.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(10)", "size": "10", "column_position": 1, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column SEC_SK.", "source_column_name": "SEC_SK", "primary_key_name": "PK_DIM_SECURITY"}'
+      - name: SECURITY_SYMBOL
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: SECURITY_SYMBOL
+        datatype: String
+        description: Exchange ticker symbol for the security.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(15)", "size": "15", "column_position": 2, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column SEC_SYM.", "source_column_name": "SEC_SYM"}'
+      - name: CUSIP
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: CUSIP
+        datatype: String
+        description: CUSIP identifier for the security.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(9)", "size": "9", "column_position": 3, "is_nullable":
+            true, "contains_pii": false, "description_from_source_system": "Documented in the source warehouse
+            as column CUSIP_ID.", "source_column_name": "CUSIP_ID"}'
+      - name: SECURITY_NAME
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: SECURITY_NAME
+        datatype: String
+        description: Full descriptive name of the security.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(200)", "size": "200", "column_position": 4, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column SEC_NM.", "source_column_name": "SEC_NM"}'
+      - name: SECURITY_TYPE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: SECURITY_TYPE
+        datatype: String
+        description: Instrument type, e.g. Equity, Bond, ETF, Mutual Fund, Cash.
+        ai_context:
+          synonyms:
+          - asset type
+          - instrument type
+          - product type
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(30)", "size": "30", "column_position": 5, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column SEC_TYP_CD.", "source_column_name": "SEC_TYP_CD"}'
+      - name: ASSET_CLASS
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: ASSET_CLASS
+        datatype: String
+        description: Broad asset class grouping for the security.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(30)", "size": "30", "column_position": 6, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column AST_CLS_CD.", "source_column_name": "AST_CLS_CD"}'
+      - name: SECTOR
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: SECTOR
+        datatype: String
+        description: Industry sector classification of the issuer.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(50)", "size": "50", "column_position": 7, "is_nullable":
+            true, "contains_pii": false, "description_from_source_system": "Documented in the source warehouse
+            as column SECT_NM.", "source_column_name": "SECT_NM"}'
+      - name: CURRENCY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: CURRENCY
+        datatype: String
+        description: ISO currency code the security is priced in.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(3)", "size": "3", "column_position": 8, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column CCY_CD.", "source_column_name": "CCY_CD"}'
+      - name: ISSUE_DATE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: ISSUE_DATE
+        datatype: Date
+        description: Date the security was issued.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "DATE", "column_position": 9, "is_nullable": true, "contains_pii":
+            false, "description_from_source_system": "Documented in the source warehouse as column ISS_DT.",
+            "source_column_name": "ISS_DT"}'
+      custom_extensions:
+      - vendor_name: COMMON
+        data: '{"asset_type": "Dimension Table"}'
+    - name: DIM_DATE
+      source: WEALTH_DB.PUBLIC.DIM_DATE
+      primary_key:
+      - DATE_ID
+      fields:
+      - name: DATE_ID
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: DATE_ID
+        datatype: Decimal
+        description: Surrogate key for the date, formatted YYYYMMDD.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(8)", "size": "8", "column_position": 1, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column DT_SK.", "source_column_name": "DT_SK", "primary_key_name": "PK_DIM_DATE"}'
+      - name: CALENDAR_DATE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: CALENDAR_DATE
+        datatype: Date
+        description: The calendar date value.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "DATE", "column_position": 2, "is_nullable": false, "contains_pii":
+            false, "description_from_source_system": "Documented in the source warehouse as column CAL_DT.",
+            "source_column_name": "CAL_DT"}'
+      - name: CALENDAR_YEAR
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: CALENDAR_YEAR
+        datatype: Decimal
+        description: Four-digit calendar year.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(4)", "size": "4", "column_position": 3, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column CAL_YR.", "source_column_name": "CAL_YR"}'
+      - name: CALENDAR_QUARTER
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: CALENDAR_QUARTER
+        datatype: Decimal
+        description: Calendar quarter number (1-4).
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(1)", "size": "1", "column_position": 4, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column CAL_QTR.", "source_column_name": "CAL_QTR"}'
+      - name: CALENDAR_MONTH
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: CALENDAR_MONTH
+        datatype: Decimal
+        description: Calendar month number (1-12).
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(2)", "size": "2", "column_position": 5, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column CAL_MNTH.", "source_column_name": "CAL_MNTH"}'
+      - name: MONTH_NAME
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: MONTH_NAME
+        datatype: String
+        description: Full name of the calendar month.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(15)", "size": "15", "column_position": 6, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column MNTH_NM.", "source_column_name": "MNTH_NM"}'
+      - name: DAY_OF_WEEK_NAME
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: DAY_OF_WEEK_NAME
+        datatype: String
+        description: Full name of the day of week.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(15)", "size": "15", "column_position": 7, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column DOW_NM.", "source_column_name": "DOW_NM"}'
+      - name: IS_MONTH_END
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: IS_MONTH_END
+        datatype: String
+        description: Flag indicating whether the date is the last day of the month.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "CHAR(1)", "size": "1", "column_position": 8, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column MNTH_END_FLG.", "source_column_name": "MNTH_END_FLG"}'
+      - name: IS_TRADING_DAY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: IS_TRADING_DAY
+        datatype: String
+        description: Flag indicating whether markets were open on the date.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "CHAR(1)", "size": "1", "column_position": 9, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column TRDNG_DAY_FLG.", "source_column_name": "TRDNG_DAY_FLG"}'
+      custom_extensions:
+      - vendor_name: COMMON
+        data: '{"asset_type": "Dimension Table"}'
+    - name: FACT_POSITION
+      source: WEALTH_DB.PUBLIC.FACT_POSITION
+      primary_key:
+      - ACCOUNT_ID
+      - SECURITY_ID
+      - AS_OF_DATE_ID
+      fields:
+      - name: ACCOUNT_ID
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: ACCOUNT_ID
+        datatype: Decimal
+        description: Foreign key to the account holding this position (DIM_ACCOUNT).
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(10)", "size": "10", "column_position": 1, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column ACCT_SK.", "source_column_name": "ACCT_SK", "primary_key_name": "PK_FACT_POSITION"}'
+      - name: SECURITY_ID
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: SECURITY_ID
+        datatype: Decimal
+        description: Foreign key to the security held in this position (DIM_SECURITY).
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(10)", "size": "10", "column_position": 2, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column SEC_SK.", "source_column_name": "SEC_SK", "primary_key_name": "PK_FACT_POSITION"}'
+      - name: AS_OF_DATE_ID
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: AS_OF_DATE_ID
+        datatype: Decimal
+        description: Foreign key to the snapshot date (DIM_DATE).
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(8)", "size": "8", "column_position": 3, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column AS_OF_DT_SK.", "source_column_name": "AS_OF_DT_SK", "primary_key_name":
+            "PK_FACT_POSITION"}'
+      - name: QUANTITY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: QUANTITY
+        datatype: Decimal
+        description: Number of units/shares of the security held.
+        ai_context:
+          synonyms:
+          - units held
+          - shares held
+          - position size
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(18,4)", "size": "18,4", "column_position": 4, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column QTY.", "source_column_name": "QTY"}'
+      - name: MARKET_PRICE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: MARKET_PRICE
+        datatype: Decimal
+        description: Price per unit as of the snapshot date, in local currency.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(18,6)", "size": "18,6", "column_position": 5, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column MKT_PX.", "source_column_name": "MKT_PX"}'
+      - name: MARKET_VALUE
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: MARKET_VALUE
+        datatype: Decimal
+        description: Total market value of the position (QUANTITY x MARKET_PRICE).
+        ai_context:
+          synonyms:
+          - position value
+          - holding value
+          - market val
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(18,2)", "size": "18,2", "column_position": 6, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column MKT_VAL_AMT.", "source_column_name": "MKT_VAL_AMT"}'
+      - name: COST_BASIS
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: COST_BASIS
+        datatype: Decimal
+        description: Total cost basis of the position.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(18,2)", "size": "18,2", "column_position": 7, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column CST_BASIS_AMT.", "source_column_name": "CST_BASIS_AMT"}'
+      - name: UNREALIZED_GAIN_LOSS
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: UNREALIZED_GAIN_LOSS
+        datatype: Decimal
+        description: MARKET_VALUE minus COST_BASIS.
+        ai_context:
+          synonyms:
+          - unrealized P&L
+          - paper gain
+          - paper loss
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "NUMBER(18,2)", "size": "18,2", "column_position": 8, "is_nullable":
+            true, "contains_pii": false, "description_from_source_system": "Documented in the source warehouse
+            as column UNRLZD_GL_AMT.", "source_column_name": "UNRLZD_GL_AMT"}'
+      - name: LOCAL_CURRENCY
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: LOCAL_CURRENCY
+        datatype: String
+        description: ISO currency code of the monetary amounts on this row.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(3)", "size": "3", "column_position": 9, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column LCL_CCY_CD.", "source_column_name": "LCL_CCY_CD"}'
+      - name: POSITION_SOURCE_SYSTEM
+        expression:
+          dialects:
+          - dialect: ANSI_SQL
+            expression: POSITION_SOURCE_SYSTEM
+        datatype: String
+        description: System of record that supplied this position record.
+        custom_extensions:
+        - vendor_name: COMMON
+          data: '{"technical_data_type": "VARCHAR2(30)", "size": "30", "column_position": 10, "is_nullable":
+            false, "contains_pii": false, "description_from_source_system": "Documented in the source
+            warehouse as column SRC_SYS_CD.", "source_column_name": "SRC_SYS_CD"}'
+      custom_extensions:
+      - vendor_name: COMMON
+        data: '{"asset_type": "Fact Table"}'
+      - vendor_name: SNOWFLAKE
+        data: '{"clustering_keys": ["AS_OF_DATE_ID", "ACCOUNT_ID"]}'
+    relationships:
+    - name: FACT_POSITION_TO_ACCOUNT
+      from: FACT_POSITION
+      to: DIM_ACCOUNT
+      from_columns:
+      - ACCOUNT_ID
+      to_columns:
+      - ACCOUNT_ID
+      ai_context:
+        instructions: Each position belongs to exactly one account.
+        synonyms:
+        - Many-to-One
+      custom_extensions:
+      - vendor_name: COMMON
+        data: '{"relationship_type": "Many-to-One"}'
+    - name: FACT_POSITION_TO_SECURITY
+      from: FACT_POSITION
+      to: DIM_SECURITY
+      from_columns:
+      - SECURITY_ID
+      to_columns:
+      - SECURITY_ID
+      ai_context:
+        instructions: Each position holds exactly one security.
+        synonyms:
+        - Many-to-One
+      custom_extensions:
+      - vendor_name: COMMON
+        data: '{"relationship_type": "Many-to-One"}'
+    - name: FACT_POSITION_TO_DATE
+      from: FACT_POSITION
+      to: DIM_DATE
+      from_columns:
+      - AS_OF_DATE_ID
+      to_columns:
+      - DATE_ID
+      ai_context:
+        instructions: Each position snapshot is tied to exactly one calendar date.
+        synonyms:
+        - Many-to-One
+      custom_extensions:
+      - vendor_name: COMMON
+        data: '{"relationship_type": "Many-to-One"}'
+    - name: ACCOUNT_TO_CLIENT
+      from: DIM_ACCOUNT
+      to: DIM_CLIENT
+      from_columns:
+      - CLIENT_ID
+      to_columns:
+      - CLIENT_ID
+      ai_context:
+        instructions: Each account is owned by exactly one client/household.
+        synonyms:
+        - Many-to-One
+      custom_extensions:
+      - vendor_name: COMMON
+        data: '{"relationship_type": "Many-to-One"}'
+    metrics:
+    - name: total_market_value
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(FACT_POSITION.MARKET_VALUE)
+      description: Total market value of all positions across accounts.
+      datatype: Decimal
+    - name: total_cost_basis
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(FACT_POSITION.COST_BASIS)
+      description: Total cost basis of all positions.
+      datatype: Decimal
+    - name: total_unrealized_gain_loss
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: SUM(FACT_POSITION.UNREALIZED_GAIN_LOSS)
+      description: Total unrealized gain or loss across all positions.
+      datatype: Decimal
+    - name: distinct_securities_held
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: COUNT(DISTINCT FACT_POSITION.SECURITY_ID)
+      description: Number of distinct securities held across all positions.
+      datatype: Integer
+    - name: average_position_value
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: AVG(FACT_POSITION.MARKET_VALUE)
+      description: Average market value per position.
+      datatype: Decimal
+  concept_mappings:
+  - concept: Client
+    object_mappings:
+    - expression: DIM_CLIENT.CLIENT_ID
+    link_mappings:
+    - object_mapping:
+        expression: DIM_CLIENT.CLIENT_ID
+      relationship: id
+    - object_mapping:
+        expression: DIM_CLIENT.CLIENT_NAME
+      relationship: client_name
+    - object_mapping:
+        expression: DIM_CLIENT.CLIENT_TYPE
+      relationship: client_type
+    - object_mapping:
+        expression: DIM_CLIENT.TAX_ID
+      relationship: tax
+    - object_mapping:
+        expression: DIM_CLIENT.ONBOARDING_DATE
+      relationship: onboarding_date
+    - object_mapping:
+        expression: DIM_CLIENT.RISK_PROFILE
+      relationship: risk_profile
+    - object_mapping:
+        expression: DIM_CLIENT.COUNTRY_CODE
+      relationship: country_code
+  - concept: Account
+    object_mappings:
+    - expression: DIM_ACCOUNT.ACCOUNT_ID
+    link_mappings:
+    - object_mapping:
+        expression: DIM_ACCOUNT.ACCOUNT_ID
+      relationship: id
+    - object_mapping:
+        expression: DIM_ACCOUNT.ACCOUNT_NUMBER
+      relationship: account_number
+    - object_mapping:
+        expression: DIM_ACCOUNT.ACCOUNT_TYPE
+      relationship: account_type
+    - object_mapping:
+        expression: DIM_ACCOUNT.ACCOUNT_STATUS
+      relationship: account_status
+    - object_mapping:
+        expression: DIM_ACCOUNT.OPEN_DATE
+      relationship: open_date
+    - object_mapping:
+        expression: DIM_ACCOUNT.CLOSE_DATE
+      relationship: close_date
+    - object_mapping:
+        expression: DIM_ACCOUNT.BASE_CURRENCY
+      relationship: base_currency
+    - object_mapping:
+        expression: DIM_ACCOUNT.CUSTODIAN_NAME
+      relationship: custodian_name
+    - object_mapping:
+        expression: DIM_ACCOUNT.ADVISOR_NAME
+      relationship: advisor_name
+    - object_mapping:
+        concept: Client
+        expression: DIM_ACCOUNT.CLIENT_ID
+      relationship: owned_by
+  - concept: Security
+    object_mappings:
+    - expression: DIM_SECURITY.SECURITY_ID
+    link_mappings:
+    - object_mapping:
+        expression: DIM_SECURITY.SECURITY_ID
+      relationship: id
+    - object_mapping:
+        expression: DIM_SECURITY.SECURITY_SYMBOL
+      relationship: security_symbol
+    - object_mapping:
+        expression: DIM_SECURITY.CUSIP
+      relationship: cusip
+    - object_mapping:
+        expression: DIM_SECURITY.SECURITY_NAME
+      relationship: security_name
+    - object_mapping:
+        expression: DIM_SECURITY.SECURITY_TYPE
+      relationship: security_type
+    - object_mapping:
+        expression: DIM_SECURITY.ASSET_CLASS
+      relationship: asset_class
+    - object_mapping:
+        expression: DIM_SECURITY.SECTOR
+      relationship: sector
+    - object_mapping:
+        expression: DIM_SECURITY.CURRENCY
+      relationship: currency
+    - object_mapping:
+        expression: DIM_SECURITY.ISSUE_DATE
+      relationship: issue_date
+  - concept: CalendarDay
+    object_mappings:
+    - expression: DIM_DATE.DATE_ID
+    link_mappings:
+    - object_mapping:
+        expression: DIM_DATE.DATE_ID
+      relationship: id
+    - object_mapping:
+        expression: DIM_DATE.CALENDAR_DATE
+      relationship: calendar_date
+    - object_mapping:
+        expression: DIM_DATE.CALENDAR_YEAR
+      relationship: calendar_year
+    - object_mapping:
+        expression: DIM_DATE.CALENDAR_QUARTER
+      relationship: calendar_quarter
+    - object_mapping:
+        expression: DIM_DATE.CALENDAR_MONTH
+      relationship: calendar_month
+    - object_mapping:
+        expression: DIM_DATE.MONTH_NAME
+      relationship: month_name
+    - object_mapping:
+        expression: DIM_DATE.DAY_OF_WEEK_NAME
+      relationship: day_of_week_name
+    - object_mapping:
+        expression: DIM_DATE.IS_MONTH_END
+      relationship: is_month_end
+    - object_mapping:
+        expression: DIM_DATE.IS_TRADING_DAY
+      relationship: is_trading_day
+  - concept: Position
+    object_mappings:
+    - referent_mappings:
+      - relationship: account
+        expression: FACT_POSITION.ACCOUNT_ID
+      - relationship: security
+        expression: FACT_POSITION.SECURITY_ID
+      - relationship: as_of_date
+        expression: FACT_POSITION.AS_OF_DATE_ID
+    link_mappings:
+    - object_mapping:
+        expression: FACT_POSITION.QUANTITY
+      relationship: quantity
+    - object_mapping:
+        expression: FACT_POSITION.MARKET_PRICE
+      relationship: market_price
+    - object_mapping:
+        expression: FACT_POSITION.MARKET_VALUE
+      relationship: market_value
+    - object_mapping:
+        expression: FACT_POSITION.COST_BASIS
+      relationship: cost_basis
+    - object_mapping:
+        expression: FACT_POSITION.UNREALIZED_GAIN_LOSS
+      relationship: unrealized_gain_loss
+    - object_mapping:
+        expression: FACT_POSITION.LOCAL_CURRENCY
+      relationship: local_currency
+    - object_mapping:
+        expression: FACT_POSITION.POSITION_SOURCE_SYSTEM
+      relationship: position_source_system
+    - object_mapping:
+        concept: Account
+        expression: FACT_POSITION.ACCOUNT_ID
+      relationship: belongs_to_account
+    - object_mapping:
+        concept: Security
+        expression: FACT_POSITION.SECURITY_ID
+      relationship: holds_security
+    - object_mapping:
+        concept: CalendarDay
+        expression: FACT_POSITION.AS_OF_DATE_ID
+      relationship: as_of

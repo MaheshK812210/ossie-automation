@@ -4,7 +4,7 @@ builder.
 Layout
 ------
 - Sidebar (collapsible): model name/description settings, a section
-  selector (Base Model, Enrich Base Model, SPOKE, BI Conversions, AI Agent
+  selector (Base Model, Enrich Base Model, SPOKE, Ontology, BI Conversions, AI Agent
   Invocation -- placeholder), sample data, template downloads, and reset.
   Everything you configure or navigate with lives in one place here.
 - Main area, center column: renders whichever section is currently
@@ -12,7 +12,8 @@ Layout
 - Main area, right column ("Ossie" section): a persistent, always-visible
   YAML view/edit panel, shared by every section -- whatever the Base Model
   section generates, or the Enrich / SPOKE sections enrich, shows up here
-  immediately. It can be expanded to full screen with the \u00ab / \u00bb
+  immediately. Ontology builds a separate ontology YAML (concepts + mappings).
+  The Ossie panel can be expanded to full screen with the \u00ab / \u00bb
   toggle (which hides the center column so the YAML can take up almost the
   full page width).
 
@@ -36,6 +37,7 @@ from streamlit_tree_select import tree_select
 import fabric_deploy as fd
 import git_registry as gitreg
 import llm_gateway as llmgw
+import ontology_builder as ontb
 import ossie_builder as ob
 import powerbi_export as pbe
 
@@ -51,6 +53,7 @@ SAMPLE_FILES = {
     "relationships": "03_relationships.csv",
     "ai_context": "04_ai_context.csv",
     "spoke_sql": "05_spoke_market_value_by_client.sql",
+    "ontology": "06_account_position_ontology.yaml",
 }
 
 DATATYPE_COLORS = {
@@ -70,6 +73,7 @@ SECTIONS = [
     ("base_model", "\U0001f4e6 Base Model"),
     ("enrich", "\U0001f9e9 Enrich Base Model"),
     ("spoke", "\U0001f6e0\ufe0f SPOKE"),
+    ("ontology", "\U0001f9e0 Ontology"),
     ("bi", "\U0001f504 BI Conversions"),
     ("ai_agent", "\U0001f916 AI Agent Invocation"),
 ]
@@ -1050,6 +1054,131 @@ def _render_spoke_section():
 
 
 # ---------------------------------------------------------------------------
+# Center pane -- Ontology (Ossie conceptual layer from semantic FACT/DIM)
+# ---------------------------------------------------------------------------
+
+ONTOLOGY_SCHEMA_PATH = os.path.join(ROOT_DIR, "schema", "ontology.json")
+
+
+def _render_ontology_section():
+    st.badge("ONTOLOGY", color="blue")
+    st.header("\U0001f9e0 Ontology")
+
+    st.caption(
+        "Builds an Apache Ossie **ontology** from the current semantic model — "
+        "concepts (`EntityType` / `ValueType`), verbalized relationships, and "
+        "**ontology mappings** back onto datasets/fields. This is the conceptual "
+        "layer described in "
+        "[ontology.md](https://github.com/apache/ossie/blob/main/ontology/ontology.md). "
+        "It is **not** the same as Enrich/SPOKE (those only add `ai_context` / "
+        "`custom_extensions` on the semantic YAML)."
+    )
+
+    if st.session_state.model is None:
+        st.caption(
+            "Generate a base YAML in **Base Model** first (e.g. Load sample data → "
+            "Generate), then return here."
+        )
+        st.markdown("Or download the bundled sample ontology for the FACT/DIM wealth model:")
+        st.download_button(
+            "⬇️ Sample account/position ontology YAML",
+            data=_read_sample("ontology"),
+            file_name=SAMPLE_FILES["ontology"],
+            mime="application/x-yaml",
+            key="dl_sample_ontology_early",
+        )
+        return
+
+    include_attrs = st.checkbox(
+        "Include attribute relationships (non-key fields → ValueTypes)",
+        value=True,
+        key="ontology_include_attrs",
+        help="When off, only identifiers and FK relationships between entities are emitted.",
+    )
+    include_maps = st.checkbox(
+        "Include ontology_mappings (embed semantic model + concept_mappings)",
+        value=True,
+        key="ontology_include_maps",
+    )
+
+    if st.button("\U0001f9e0 Build ontology from semantic model", type="primary", key="build_ontology_btn"):
+        try:
+            doc = ontb.build_ontology_from_semantic_model(
+                st.session_state.model,
+                include_attribute_relationships=include_attrs,
+                include_mappings=include_maps,
+            )
+            st.session_state["ontology_doc"] = doc
+            st.session_state["ontology_yaml"] = ontb.ontology_to_yaml(doc)
+            st.session_state["ontology_message"] = (
+                f"Ontology `{doc['name']}` built with "
+                f"{sum(1 for c in doc['ontology'] if c['type']=='EntityType')} entity concepts "
+                f"and {sum(1 for c in doc['ontology'] if c['type']=='ValueType')} value types."
+            )
+        except Exception as e:  # noqa: BLE001
+            st.error(f"Failed to build ontology: {e}")
+            with st.expander("Show details"):
+                st.code(traceback.format_exc())
+
+    if st.session_state.get("ontology_message"):
+        st.success(st.session_state.ontology_message)
+        st.session_state.ontology_message = None
+
+    doc = st.session_state.get("ontology_doc")
+    yaml_text = st.session_state.get("ontology_yaml")
+    if doc and yaml_text:
+        entities = [c for c in doc["ontology"] if c.get("type") == "EntityType"]
+        mcols = st.columns(3)
+        mcols[0].metric("Entity concepts", len(entities))
+        mcols[1].metric(
+            "Value types",
+            sum(1 for c in doc["ontology"] if c.get("type") == "ValueType"),
+        )
+        mcols[2].metric(
+            "Mappings",
+            len((doc.get("ontology_mappings") or [{}])[0].get("concept_mappings") or [])
+            if doc.get("ontology_mappings")
+            else 0,
+        )
+
+        with st.expander("Entity concepts & verbalizations", expanded=True):
+            for ent in entities:
+                st.markdown(f"**{ent['concept']}** — {ent.get('description', '')}")
+                for rel in ent.get("relationships") or []:
+                    roles = ", ".join(r.get("concept", "") for r in rel.get("roles") or [])
+                    verb = (rel.get("verbalizes") or [""])[0]
+                    st.caption(f"`{ent['concept']}.{rel['name']}` → {roles} — *{verb}*")
+
+        errs = ontb.validate_ontology(doc, ONTOLOGY_SCHEMA_PATH)
+        if errs:
+            st.error("Ontology does not pass `schema/ontology.json`:")
+            for e in errs[:20]:
+                st.write(f"- {e}")
+        else:
+            st.caption("Validated against bundled `schema/ontology.json`.")
+
+        st.code(yaml_text, language="yaml")
+        st.download_button(
+            "⬇️ Download ontology YAML",
+            data=yaml_text,
+            file_name=f"{_current_model_name()}_ontology.yaml",
+            mime="application/x-yaml",
+            type="primary",
+            key="dl_ontology_yaml",
+        )
+
+    st.divider()
+    st.markdown("**Bundled sample** (pre-built for the wealth FACT/DIM model):")
+    st.download_button(
+        "⬇️ Sample account/position ontology YAML",
+        data=_read_sample("ontology"),
+        file_name=SAMPLE_FILES["ontology"],
+        mime="application/x-yaml",
+        key="dl_sample_ontology",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Center pane -- BI Conversions section (was "Stage 3")
 # ---------------------------------------------------------------------------
 
@@ -1379,13 +1508,17 @@ column references).
    Gateway into an **instruction**, stored as model-level
    `custom_extensions` JSON (`vendor_name: SPOKE`) and concatenated onto
    model `ai_context.instructions`.
-4. **BI Conversions**: converts the current model into a target BI tool's
+4. **Ontology**: derives an Apache Ossie ontology (concepts, verbalized
+   relationships, ontology mappings) from the current FACT/DIM semantic
+   model — see [ontology.md](https://github.com/apache/ossie/blob/main/ontology/ontology.md).
+   Separate from Enrich/SPOKE.
+5. **BI Conversions**: converts the current model into a target BI tool's
    own semantic model format. Only **Power BI** is implemented -- it
    produces real TMSL (`model.bim`) and a TMDL-based Power BI Project,
    deployable via Power BI Desktop or headlessly via the Fabric REST API,
    with a local synthetic-data preview of the DAX measures. Tableau shows
    as a planned option, not yet built.
-5. **AI Agent Invocation**: placeholder for a future AI agent integration.
+6. **AI Agent Invocation**: placeholder for a future AI agent integration.
 
 **Mapping summary**
 
@@ -1427,6 +1560,9 @@ st.session_state.setdefault("yaml_editor", "")
 st.session_state.setdefault("enrichment_message", None)
 st.session_state.setdefault("spoke_message", None)
 st.session_state.setdefault("spoke_last_enrichment", None)
+st.session_state.setdefault("ontology_doc", None)
+st.session_state.setdefault("ontology_yaml", None)
+st.session_state.setdefault("ontology_message", None)
 st.session_state.setdefault("yaml_fullscreen", False)
 st.session_state.setdefault("yaml_panel_tall", False)
 st.session_state.setdefault("pbi_export", None)
@@ -1510,8 +1646,13 @@ with st.sidebar:
             ("relationships", "3. Relationships"),
             ("ai_context", "4. AI context enrichment"),
             ("spoke_sql", "5. SPOKE sample SQL"),
+            ("ontology", "6. Sample ontology YAML"),
         ]:
-            mime = "application/sql" if key == "spoke_sql" else "text/csv"
+            mime = (
+                "application/sql"
+                if key == "spoke_sql"
+                else ("application/x-yaml" if key == "ontology" else "text/csv")
+            )
             st.download_button(
                 label=f"⬇️ {label}",
                 data=_read_sample(key),
@@ -1534,6 +1675,9 @@ with st.sidebar:
         st.session_state.use_sample_spoke_sql = False
         st.session_state.spoke_message = None
         st.session_state.spoke_last_enrichment = None
+        st.session_state.ontology_doc = None
+        st.session_state.ontology_yaml = None
+        st.session_state.ontology_message = None
         st.session_state.pbi_export = None
         st.session_state.pbi_metric_preview = None
         st.session_state.fabric_deploy_result = None
@@ -1549,7 +1693,7 @@ st.markdown(
     """
 <div class="ossie-hero">
   <h1>🧬 Apache Ossie Semantic Model Builder</h1>
-  <p>Pick a section in the sidebar -- <b>Base Model</b>, <b>Enrich Base Model</b>, <b>SPOKE</b>, <b>BI
+  <p>Pick a section in the sidebar -- <b>Base Model</b>, <b>Enrich Base Model</b>, <b>SPOKE</b>, <b>Ontology</b>, <b>BI
   Conversions</b>, or <b>AI Agent Invocation</b> -- and its details appear on the left.
   The <b>Ossie</b> panel on the right always shows the current YAML, live, with a
   <code>\u00ab</code>/<code>\u00bb</code> toggle to expand it to full screen.</p>
@@ -1576,6 +1720,8 @@ else:
             _render_enrich_section()
         elif active_section == "spoke":
             _render_spoke_section()
+        elif active_section == "ontology":
+            _render_ontology_section()
         elif active_section == "bi":
             _render_bi_section()
         elif active_section == "ai_agent":
