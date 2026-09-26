@@ -39,6 +39,7 @@ import git_registry as gitreg
 import llm_gateway as llmgw
 import ontology_builder as ontb
 import ossie_builder as ob
+import ossie_microsoft_bridge as omb
 import powerbi_export as pbe
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1186,254 +1187,280 @@ def _render_bi_section():
     st.badge("BI CONVERSIONS", color="orange")
     st.header("\U0001f504 BI Conversions")
 
-    if st.session_state.model is None:
-        st.caption("Generate a base YAML in the **Base Model** tab first \u2014 this section unlocks once one exists.")
-        return
-
     st.caption(
-        "Convert the current Ossie semantic model into a target BI tool's own semantic model "
-        "format, with one click \u2014 no desktop application required to generate it."
+        "Bidirectional conversion via the official Apache "
+        "[**ossie_microsoft**](https://github.com/apache/ossie/tree/main/converters/microsoft) "
+        "converter (vendored in this repo). Ossie → Power BI produces TMSL `model.bim` "
+        "(and a `.pbip` zip). Power BI → Ossie imports a `model.bim` into the Ossie panel."
     )
-    bi_tabs = st.tabs(["\U0001f7e6 Power BI", "\U0001f4ca Tableau"])
 
+    bi_tabs = st.tabs(
+        [
+            "\u279c Ossie \u2192 Power BI",
+            "\u279c Power BI \u2192 Ossie",
+            "\U0001f4ca Tableau",
+        ]
+    )
+
+    # ----- Ossie → Power BI (official) -----
     with bi_tabs[0]:
-        st.markdown(
-            "Generates a real **Power BI Project**: a top-level `.pbip` file, a `.Report` "
-            "folder (a minimal blank report), and a `.SemanticModel` folder (TMSL `model.bim`, "
-            "plain JSON \u2014 never mixed with a TMDL folder, which Power BI Desktop treats as "
-            "invalid), all zipped together \u2014 unzip and open the `.pbip` file in Power BI Desktop "
-            "(*File \u2192 Open \u2192 Power BI Project*) with **no other tool required**. The "
-            "blank report is a best-effort scaffold (built without a real Power BI Desktop "
-            "available here to test against) \u2014 if it doesn't open cleanly in yours, the "
-            "`.SemanticModel` folder still works on its own via **Tabular Editor** (deploy "
-            "`model.bim` to a blank Desktop file or a Premium/Fabric XMLA endpoint), the "
-            "**Deploy to Fabric** tab below, or git integration \u2014 see the README for all "
-            "of these paths."
-        )
-
-        use_snowflake = st.checkbox("\U0001f9ca Use Snowflake as the data source", key="pbi_use_snowflake")
-        if use_snowflake:
+        if st.session_state.model is None:
             st.caption(
-                "Fill this in to generate real `Snowflake.Databases(...)` M code \u2014 Power "
-                "BI's native Snowflake connector syntax, ready to connect. Database/schema/table "
-                "come from each dataset's Ossie `source` field, which is inferred from the "
-                "metadata file's qualified `Name` column (e.g. `MY_DB.PUBLIC.MY_TABLE`). **No "
-                "credentials are entered or stored here** \u2014 Power BI prompts for those "
-                "(username/password, SSO, key-pair, ...) the first time the model connects or "
-                "refreshes."
+                "Generate a base YAML in **Base Model** first, then convert it to Power BI here."
             )
         else:
-            st.caption(
-                "Without Snowflake configured, each table's Power Query source is a generic "
-                "placeholder you'd hand-edit later."
+            st.markdown(
+                "Uses **apache-ossie-microsoft** (`convert_ossie_to_semantic_model`) for a "
+                "faithful TMSL export. Optional Snowflake settings rewrite partitions to "
+                "`Snowflake.Databases(...)` after conversion. Complex SQL metrics are "
+                "translated only when unambiguous; otherwise they are reported in the "
+                "warnings list (by design — better missing than wrong)."
             )
 
-        # All of the Snowflake fields (when shown) and the conversion trigger live inside one
-        # form so their values are submitted together, atomically, in a single event -- a
-        # plain button here could race with a text_input's value not yet having committed to
-        # session_state if the button is clicked immediately after typing.
-        with st.form("pbi_convert_form"):
-            sf_account = sf_warehouse = sf_role = ""
+            use_snowflake = st.checkbox(
+                "\U0001f9ca Use Snowflake as the data source", key="pbi_use_snowflake"
+            )
             if use_snowflake:
-                sf_cols = st.columns(3)
-                with sf_cols[0]:
-                    sf_account = st.text_input(
-                        "Account URL", placeholder="myorg-myaccount.snowflakecomputing.com", key="pbi_sf_account"
-                    )
-                with sf_cols[1]:
-                    sf_warehouse = st.text_input("Warehouse", placeholder="COMPUTE_WH", key="pbi_sf_warehouse")
-                with sf_cols[2]:
-                    sf_role = st.text_input("Role (optional)", key="pbi_sf_role")
-            convert_clicked = st.form_submit_button(
-                "\U0001f504 Convert to Power BI semantic model", type="primary"
-            )
-
-        if convert_clicked:
-            data_source = None
-            if use_snowflake and sf_account.strip() and sf_warehouse.strip():
-                data_source = {
-                    "type": "snowflake",
-                    "account": sf_account.strip(),
-                    "warehouse": sf_warehouse.strip(),
-                    "role": sf_role.strip() or None,
-                }
-            elif use_snowflake:
-                st.warning("Enter at least the Account URL and Warehouse to generate Snowflake M code \u2014 falling back to the generic placeholder for now.")
-
-            try:
-                st.session_state["pbi_export"] = pbe.convert_to_powerbi(
-                    st.session_state.model, _current_model_name(), data_source=data_source
+                st.caption(
+                    "Post-process partitions with this app's Snowflake M after the official "
+                    "conversion. Credentials are never stored — Power BI prompts on Refresh."
                 )
-                st.session_state["pbi_metric_preview"] = None
+
+            with st.form("pbi_official_export_form"):
+                sf_account = sf_warehouse = sf_role = ""
+                if use_snowflake:
+                    sf_cols = st.columns(3)
+                    with sf_cols[0]:
+                        sf_account = st.text_input(
+                            "Account URL",
+                            placeholder="myorg-myaccount.snowflakecomputing.com",
+                            key="pbi_sf_account",
+                        )
+                    with sf_cols[1]:
+                        sf_warehouse = st.text_input(
+                            "Warehouse", placeholder="COMPUTE_WH", key="pbi_sf_warehouse"
+                        )
+                    with sf_cols[2]:
+                        sf_role = st.text_input("Role (optional)", key="pbi_sf_role")
+                convert_clicked = st.form_submit_button(
+                    "\U0001f504 Convert Ossie \u2192 Power BI (ossie_microsoft)", type="primary"
+                )
+
+            if convert_clicked:
+                data_source = None
+                if use_snowflake and sf_account.strip() and sf_warehouse.strip():
+                    data_source = {
+                        "type": "snowflake",
+                        "account": sf_account.strip(),
+                        "warehouse": sf_warehouse.strip(),
+                        "role": sf_role.strip() or None,
+                    }
+                elif use_snowflake:
+                    st.warning(
+                        "Enter Account URL and Warehouse for Snowflake M — converting "
+                        "without Snowflake post-process for now."
+                    )
+                try:
+                    result = omb.ossie_to_powerbi(
+                        st.session_state.model,
+                        project_name=_current_model_name(),
+                        data_source=data_source,
+                        package_pbip=True,
+                    )
+                    st.session_state["pbi_official_export"] = result
+                except Exception as e:  # noqa: BLE001
+                    st.error(f"Official Ossie \u2192 Power BI conversion failed: {e}")
+                    with st.expander("Show details"):
+                        st.code(traceback.format_exc())
+
+            result = st.session_state.get("pbi_official_export")
+            if result is not None and result.tmsl is not None:
+                n_tables = len(result.tmsl["model"]["tables"])
+                n_measures = sum(
+                    len(t.get("measures", [])) for t in result.tmsl["model"]["tables"]
+                )
+                n_rels = len(result.tmsl["model"].get("relationships", []))
+                mcols = st.columns(3)
+                mcols[0].metric("Tables", n_tables)
+                mcols[1].metric("Measures (DAX)", n_measures)
+                mcols[2].metric("Relationships", n_rels)
+
+                dcols = st.columns(2)
+                with dcols[0]:
+                    st.download_button(
+                        "\u2b07\ufe0f Download model.bim (TMSL)",
+                        data=(result.bim_json or "").encode("utf-8"),
+                        file_name=f"{_current_model_name()}.model.bim",
+                        mime="application/json",
+                        type="primary",
+                        key="dl_official_bim",
+                    )
+                with dcols[1]:
+                    if result.pbip_zip_bytes:
+                        st.download_button(
+                            "\u2b07\ufe0f Download Power BI Project (.zip)",
+                            data=result.pbip_zip_bytes,
+                            file_name=f"{_current_model_name()}.pbip.zip",
+                            mime="application/zip",
+                            key="dl_official_pbip",
+                        )
+
+                if result.warnings:
+                    with st.expander(
+                        f"Conversion notes ({len(result.warnings)} — from ossie_microsoft)",
+                        expanded=False,
+                    ):
+                        for msg in result.warnings[:200]:
+                            st.caption(f"• {msg}")
+
+                with st.expander("model.bim preview", expanded=False):
+                    st.code(result.bim_json or "", language="json")
+
+            with st.expander("Legacy exporter (this app’s original TMSL/TMDL + Fabric)", expanded=False):
+                st.caption(
+                    "Optional fallback that still uses `powerbi_export.py` (pre-ossie_microsoft). "
+                    "Useful for Fabric TMDL deploy and synthetic metric preview."
+                )
+                if st.button("Run legacy convert", key="legacy_pbi_convert"):
+                    try:
+                        st.session_state["pbi_export"] = pbe.convert_to_powerbi(
+                            st.session_state.model, _current_model_name(), data_source=None
+                        )
+                        st.session_state["pbi_metric_preview"] = None
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Legacy convert failed: {e}")
+
+                export = st.session_state.get("pbi_export")
+                if export is not None:
+                    st.download_button(
+                        "Download legacy PBIP zip",
+                        data=export.zip_bytes,
+                        file_name=f"{_current_model_name()}.legacy.SemanticModel.zip",
+                        mime="application/zip",
+                        key="dl_legacy_pbi_zip",
+                    )
+                    if st.button("Run metrics on synthetic data", key="run_metrics_pbi"):
+                        try:
+                            synth = pbe.generate_synthetic_data(st.session_state.model)
+                            st.session_state["pbi_metric_preview"] = pbe.evaluate_metrics(
+                                st.session_state.model, synth
+                            )
+                        except Exception as e:  # noqa: BLE001
+                            st.error(f"Failed to evaluate metrics: {e}")
+                    preview = st.session_state.get("pbi_metric_preview")
+                    if preview:
+                        st.dataframe(
+                            [
+                                {
+                                    "Metric": r["name"],
+                                    "DAX": r["dax_expression"],
+                                    "Value": r["value"] if r["error"] is None else "—",
+                                    "Note": r["error"] or "",
+                                }
+                                for r in preview
+                            ],
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                    st.markdown("**Deploy to Fabric** (uses legacy TMDL files):")
+                    with st.form("fabric_deploy_form"):
+                        fcols = st.columns(2)
+                        with fcols[0]:
+                            fabric_workspace_id = st.text_input(
+                                "Fabric workspace ID (GUID)", key="fabric_workspace_id"
+                            )
+                        with fcols[1]:
+                            fabric_display_name = st.text_input(
+                                "Semantic model name in Fabric",
+                                value=export.display_name,
+                                key="fabric_display_name",
+                            )
+                        fabric_token = st.text_input(
+                            "Bearer token", type="password", key="fabric_bearer_token"
+                        )
+                        deploy_clicked = st.form_submit_button(
+                            "Deploy to Fabric workspace", type="primary"
+                        )
+                    if deploy_clicked:
+                        with st.spinner("Deploying to Fabric..."):
+                            st.session_state["fabric_deploy_result"] = fd.create_semantic_model(
+                                workspace_id=fabric_workspace_id,
+                                bearer_token=fabric_token,
+                                display_name=fabric_display_name.strip() or export.display_name,
+                                tmdl_files=export.tmdl_files,
+                                pbism_bytes=export.pbism_bytes,
+                                platform_bytes=export.platform_bytes,
+                                description="Generated by the Ossie Semantic Model Builder.",
+                            )
+                    deploy_result = st.session_state.get("fabric_deploy_result")
+                    if deploy_result is not None:
+                        if deploy_result.success:
+                            st.success(deploy_result.message)
+                        else:
+                            st.error(deploy_result.message)
+
+    # ----- Power BI → Ossie (official) -----
+    with bi_tabs[1]:
+        st.markdown(
+            "Import a Power BI / Fabric **`model.bim`** (TMSL JSON) into Ossie using "
+            "`convert_semantic_model_to_ossie`. The result is loaded into the Ossie panel "
+            "(wrapped as this app’s `semantic_model` document). Power BI–only constructs "
+            "are preserved in `custom_extensions` (`vendor_name: POWER_BI`) when possible."
+        )
+        bim_upload = st.file_uploader(
+            "Upload model.bim",
+            type=["bim", "json"],
+            key="pbi_import_bim",
+            help="TMSL model.bim from Power BI Desktop / Tabular Editor / Fabric.",
+        )
+        if bim_upload is not None and st.button(
+            "\U0001f504 Convert Power BI \u2192 Ossie (ossie_microsoft)",
+            type="primary",
+            key="pbi_import_btn",
+        ):
+            try:
+                bim = omb.load_bim_bytes(bim_upload.getvalue())
+                result = omb.powerbi_to_ossie(bim)
+                st.session_state["pbi_official_import"] = result
+                st.session_state["_pending_model"] = result.app_model
+                if result.app_model and result.app_model["semantic_model"]:
+                    st.session_state["_pending_model_name"] = result.app_model["semantic_model"][0].get(
+                        "name", "imported_model"
+                    )
+                st.session_state["registry_message"] = None
+                st.rerun()
             except Exception as e:  # noqa: BLE001
-                st.error(f"Failed to convert to a Power BI semantic model: {e}")
+                st.error(f"Power BI \u2192 Ossie conversion failed: {e}")
                 with st.expander("Show details"):
                     st.code(traceback.format_exc())
 
-        export = st.session_state.get("pbi_export")
-        if export is not None:
-            n_tables = len(export.tmsl["model"]["tables"])
-            n_measures = sum(len(t.get("measures", [])) for t in export.tmsl["model"]["tables"])
-            n_rels = len(export.tmsl["model"].get("relationships", []))
-            mcols = st.columns(3)
-            mcols[0].metric("Tables", n_tables)
-            mcols[1].metric("Measures (DAX)", n_measures)
-            mcols[2].metric("Relationships", n_rels)
-
+        imp = st.session_state.get("pbi_official_import")
+        if imp is not None and imp.ossie_yaml:
+            st.success(
+                "Imported into the Ossie panel. Review YAML on the right; use **Apply edits** "
+                "if you change it."
+            )
+            if imp.warnings:
+                with st.expander(
+                    f"Import notes ({len(imp.warnings)})", expanded=False
+                ):
+                    for msg in imp.warnings[:200]:
+                        st.caption(f"• {msg}")
             st.download_button(
-                "\u2b07\ufe0f Download Power BI Project (.zip)",
-                data=export.zip_bytes,
-                file_name=f"{_current_model_name()}.SemanticModel.zip",
-                mime="application/zip",
-                type="primary",
-                key="dl_pbi_zip",
+                "⬇️ Download imported Ossie YAML (flat)",
+                data=imp.ossie_yaml,
+                file_name="imported_from_powerbi.ossie.yaml",
+                mime="application/x-yaml",
+                key="dl_imported_ossie",
             )
-            if "Snowflake.Databases" in export.tmsl_json:
-                st.caption(
-                    "\u2705 This export uses real Snowflake connection code. Next: unzip it and "
-                    "open the `.pbip` file in Power BI Desktop, then hit **Refresh** \u2014 Power "
-                    "BI will prompt you for Snowflake sign-in (username/password, SSO, or "
-                    "key-pair) and pull real data into the measures above. If the `.pbip` "
-                    "doesn't open cleanly, fall back to Tabular Editor with `model.bim` (see "
-                    "the README)."
-                )
-            else:
-                st.caption(
-                    "This export uses a generic placeholder data source. Check **Use Snowflake "
-                    "as the data source** above, fill in your account/warehouse, and re-convert "
-                    "to get real, ready-to-connect Snowflake M code instead."
-                )
+            with st.expander("Imported Ossie YAML preview", expanded=False):
+                st.code(imp.ossie_yaml, language="yaml")
 
-            pbi_view_tabs = st.tabs(
-                [
-                    "model.bim (TMSL)",
-                    "TMDL files",
-                    "\u25b6\ufe0f Preview metrics (DAX)",
-                    "\U0001f6f0\ufe0f Deploy to Fabric",
-                ]
-            )
-            with pbi_view_tabs[0]:
-                st.code(export.tmsl_json, language="json", line_numbers=True)
-            with pbi_view_tabs[1]:
-                file_choice = st.selectbox("File", list(export.tmdl_files.keys()), key="tmdl_file_choice")
-                st.code(export.tmdl_files[file_choice], language="text")
-            with pbi_view_tabs[2]:
-                st.caption(
-                    "There's no live Power BI service or data warehouse connected in this "
-                    "environment, so these values are computed against small, randomly "
-                    "generated **synthetic sample data** matching your schema \u2014 purely to "
-                    "prove the metric logic (and its SQL \u2192 DAX translation) runs end-to-end. "
-                    "They are illustrative, not real business results."
-                )
-                if st.button("\u25b6\ufe0f Run metrics against synthetic sample data", key="run_metrics_pbi"):
-                    try:
-                        synth = pbe.generate_synthetic_data(st.session_state.model)
-                        st.session_state["pbi_metric_preview"] = pbe.evaluate_metrics(
-                            st.session_state.model, synth
-                        )
-                    except Exception as e:  # noqa: BLE001
-                        st.error(f"Failed to evaluate metrics: {e}")
-                        with st.expander("Show details"):
-                            st.code(traceback.format_exc())
-
-                preview = st.session_state.get("pbi_metric_preview")
-                if preview:
-                    rows = [
-                        {
-                            "Metric": r["name"],
-                            "DAX expression": r["dax_expression"],
-                            "Simulated value": r["value"] if r["error"] is None else "\u2014",
-                            "Note": r["error"] or "",
-                        }
-                        for r in preview
-                    ]
-                    st.dataframe(rows, use_container_width=True, hide_index=True)
-                elif preview == []:
-                    st.caption("No metrics are defined in this model yet.")
-
-            with pbi_view_tabs[3]:
-                st.markdown(
-                    "Push this semantic model straight into a **Microsoft Fabric workspace** "
-                    "over HTTPS \u2014 skipping Power BI Desktop, SSMS, and Tabular Editor "
-                    "entirely. This calls the real "
-                    "[Fabric REST API](https://learn.microsoft.com/en-us/rest/api/fabric/semanticmodel/items/create-semantic-model) "
-                    "(`POST /v1/workspaces/{id}/semanticModels`)."
-                )
-                st.caption(
-                    "**Requires** (outside this app, on your Microsoft tenant): a "
-                    "**Fabric-enabled workspace** (Fabric trial capacity, Premium, or PPU \u2014 "
-                    "plain Power BI Pro workspaces don't support this API) and a **bearer "
-                    "token** for it. Get a token from any terminal, no desktop app:"
-                )
-                st.code(
-                    "az login\n"
-                    "az account get-access-token --resource https://api.fabric.microsoft.com "
-                    "--query accessToken -o tsv",
-                    language="bash",
-                )
-                st.caption(
-                    "The token is used only for this one request and is never written to "
-                    "disk or logged. Tokens expire after about an hour."
-                )
-
-                with st.form("fabric_deploy_form"):
-                    fcols = st.columns(2)
-                    with fcols[0]:
-                        fabric_workspace_id = st.text_input(
-                            "Fabric workspace ID (GUID)",
-                            placeholder="e.g. cfafbeb1-8037-4d0c-896e-a46fb27ff229",
-                            key="fabric_workspace_id",
-                        )
-                    with fcols[1]:
-                        fabric_display_name = st.text_input(
-                            "Semantic model name in Fabric",
-                            value=export.display_name,
-                            key="fabric_display_name",
-                        )
-                    fabric_token = st.text_input(
-                        "Bearer token",
-                        type="password",
-                        key="fabric_bearer_token",
-                        help="Pasted here only for this request; not stored or logged.",
-                    )
-                    deploy_clicked = st.form_submit_button(
-                        "\U0001f680 Deploy to Fabric workspace", type="primary"
-                    )
-
-                if deploy_clicked:
-                    with st.spinner("Deploying to Fabric \u2014 this can take up to a couple of minutes..."):
-                        st.session_state["fabric_deploy_result"] = fd.create_semantic_model(
-                            workspace_id=fabric_workspace_id,
-                            bearer_token=fabric_token,
-                            display_name=fabric_display_name.strip() or export.display_name,
-                            tmdl_files=export.tmdl_files,
-                            pbism_bytes=export.pbism_bytes,
-                            platform_bytes=export.platform_bytes,
-                            description="Generated by the Ossie Semantic Model Builder from an Apache Ossie YAML.",
-                        )
-
-                deploy_result = st.session_state.get("fabric_deploy_result")
-                if deploy_result is not None:
-                    if deploy_result.success:
-                        st.success(f"\u2705 {deploy_result.message}")
-                        if deploy_result.workspace_url:
-                            st.markdown(f"[Open the workspace \u2192]({deploy_result.workspace_url})")
-                    else:
-                        st.error(f"\u274c {deploy_result.message}")
-
-                st.caption(
-                    "No Fabric workspace handy, or don't want to hand over a token? Commit the "
-                    "downloaded `.SemanticModel` folder to a git repo connected to a Fabric "
-                    "workspace's **git integration** instead \u2014 `git push` alone syncs it, "
-                    "with no API call and no desktop app either."
-                )
-
-    with bi_tabs[1]:
+    with bi_tabs[2]:
         st.info(
-            "**Tableau data model export isn't built in this app yet** \u2014 only the Power BI "
-            "path is implemented for now. The same Ossie YAML could similarly drive a Tableau "
-            "data source (`.tds`/`.tdsx` XML: tables, joins, and calculated fields translated "
-            "into Tableau's calculation language) as a future addition.",
+            "**Tableau data model export isn't built in this app yet** — only the Power BI "
+            "path is implemented for now.",
             icon="\U0001f6a7",
         )
 
@@ -1567,6 +1594,8 @@ st.session_state.setdefault("yaml_fullscreen", False)
 st.session_state.setdefault("yaml_panel_tall", False)
 st.session_state.setdefault("pbi_export", None)
 st.session_state.setdefault("pbi_metric_preview", None)
+st.session_state.setdefault("pbi_official_export", None)
+st.session_state.setdefault("pbi_official_import", None)
 st.session_state.setdefault("fabric_deploy_result", None)
 st.session_state.setdefault("active_section", SECTIONS[0][0])
 st.session_state.setdefault("registry_message", None)
@@ -1680,6 +1709,8 @@ with st.sidebar:
         st.session_state.ontology_message = None
         st.session_state.pbi_export = None
         st.session_state.pbi_metric_preview = None
+        st.session_state.pbi_official_export = None
+        st.session_state.pbi_official_import = None
         st.session_state.fabric_deploy_result = None
         st.session_state.yaml_fullscreen = False
         st.session_state.registry_message = None

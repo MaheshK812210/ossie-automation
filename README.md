@@ -114,24 +114,39 @@ This is the **conceptual** layer. Enrich/SPOKE remain AI coatings on the
 **semantic** YAML — they do not replace ontology. A sample for the wealth
 FACT/DIM model ships as `sample_data/06_account_position_ontology.yaml`.
 
-### BI Conversions -- export to a BI tool (optional)
+### BI Conversions -- Ossie ↔ Power BI (bidirectional)
 
-Once a base YAML exists, this section lets you convert it with one click.
-Two options are shown; only **Power BI** is implemented (Tableau appears
-as a clearly-labeled "not built yet" option):
+Once a base YAML exists, this section converts it with the official Apache
+[`ossie_microsoft`](https://github.com/apache/ossie/tree/main/converters/microsoft)
+converter (vendored under `vendor/apache-ossie-microsoft`, wrapped by
+`ossie_microsoft_bridge.py`). Tableau appears as a clearly-labeled
+"not built yet" option.
 
-- **Power BI**: generates a real **Power BI Project** -- a top-level
-  `<name>.pbip` manifest, a `<name>.Report` folder (a minimal blank
-  report), and a `<name>.SemanticModel` folder (TMSL `model.bim`), all
-  zipped together. The `.SemanticModel` folder deliberately ships
+- **Ossie → Power BI**: calls `convert_ossie_to_semantic_model` and
+  packages the resulting TMSL as a downloadable `model.bim` plus a
+  `.pbip` zip (`<name>.pbip` + blank Report + SemanticModel). Optional
+  Snowflake settings rewrite table partitions to
+  `Snowflake.Databases(...)` M after the official conversion. Conversion
+  warnings from the converter (unsupported constructs, skipped metrics,
+  etc.) are shown in the UI.
+- **Power BI → Ossie**: upload a Fabric / Power BI Desktop `model.bim`
+  (TMSL JSON); `convert_semantic_model_to_ossie` produces flat Ossie YAML,
+  which the bridge wraps into this app's `{"semantic_model": [...]}`
+  shape and loads into the Ossie panel. Power BI–only constructs are
+  preserved in `custom_extensions` (`vendor_name: POWER_BI`) when possible.
+- **Legacy exporter** (expander): the original in-repo `powerbi_export.py`
+  path remains available for Fabric TMDL deploy and synthetic DuckDB
+  metric preview. That path generates a real **Power BI Project** -- a
+  top-level `<name>.pbip` manifest, a `<name>.Report` folder (a minimal
+  blank report), and a `<name>.SemanticModel` folder (TMSL `model.bim`),
+  all zipped together. The `.SemanticModel` folder deliberately ships
   **TMSL (`model.bim`, plain JSON) only, never a TMDL `definition/`
   folder alongside it** -- per Microsoft's own docs those two are
   mutually exclusive representations of the same model, and shipping
   both in one folder is itself invalid (this caused a "TMDL Format
   Error: Invalid line type" opening the project, before this was fixed).
-  TMDL is still available separately -- see the **"model.bim (TMSL)" /
-  "TMDL files"** tabs in the app, and the **Deploy to Fabric** path below,
-  which uses TMDL on its own.
+  TMDL is still available separately via the legacy path and the
+  **Deploy to Fabric** form below, which uses TMDL on its own.
   - Download it as a ready-to-use `.zip`. Unzip and open the `.pbip` file
     in Power BI Desktop (*File \u2192 Open \u2192 Power BI Project*) -- **no
     Tabular Editor, Fabric workspace, or any other tool needed** just to
@@ -457,7 +472,9 @@ app.py                            Streamlit UI (sidebar settings/nav, center = a
 ossie_builder.py                  Ossie parsing + YAML generation/merge logic (framework-free, unit-tested)
 llm_gateway.py                    SPOKE client for external LLM Gateway (SQL → instruction JSON)
 ontology_builder.py               Semantic model → Ossie ontology + concept mappings
-powerbi_export.py                 Ossie -> Power BI (TMSL/TMDL) conversion + synthetic-data metric preview
+ossie_microsoft_bridge.py         Bidirectional Ossie ↔ Power BI via official ossie_microsoft
+vendor/apache-ossie-microsoft/    Vendored Apache ossie_microsoft converter (Apache-2.0)
+powerbi_export.py                 Legacy Ossie → Power BI (TMSL/TMDL) + synthetic-data metric preview
 fabric_deploy.py                  Headless Fabric REST API deployment (no Power BI Desktop required)
 git_registry.py                   Save/load models to a GitHub-backed registry repo (GitHub Contents API)
 schema/ossie-schema.json           Official Apache Ossie JSON Schema (bundled for validation)
@@ -467,6 +484,7 @@ scripts/generate_sample_data.py    Regenerates the sample_data/ CSV files
 tests/test_ossie_builder.py        Pytest suite: base generation + AI-context enrichment merge behavior
 tests/test_sql_spoke.py            Pytest suite: LLM gateway client + SPOKE model enrichment
 tests/test_ontology_builder.py     Pytest suite: ontology derivation + schema validation
+tests/test_ossie_microsoft_bridge.py  Pytest: official converter round-trip + Snowflake post-process
 tests/test_powerbi_export.py       Pytest suite: SQL->DAX translation, TMSL/TMDL output, metric preview
 tests/test_fabric_deploy.py        Pytest suite: Fabric API payload construction + mocked deploy/poll flows
 tests/test_git_registry.py         Pytest suite: registry list/load/save (create vs. overwrite) + error paths
@@ -492,12 +510,12 @@ pytest
   content again (it's a simple additive merge) -- avoid re-uploading the
   same enrichment file twice unless you intend to duplicate its synonyms
   and appended `custom_extensions`.
-- The Power BI export is a best-effort structural conversion (SQL -> DAX
-  translation, Tabular relationship mapping). Composite relationship keys
-  are reduced to their first column pair (Tabular relationships are
-  single-column), and the placeholder Power Query (M) source expressions
-  need to be pointed at a real data source before deploying for actual use.
-  Review the generated `model.bim`/TMDL before deploying to production.
+- Primary Power BI conversion uses the official Apache `ossie_microsoft`
+  converter. It translates SQL metrics to DAX only when unambiguous and
+  reports other constructs as warnings (by design). The legacy
+  `powerbi_export.py` path remains for Fabric TMDL deploy and synthetic
+  metric preview; both need a real data source (or Snowflake settings)
+  before production use. Review generated `model.bim` before deploying.
 - The "Tables & columns" tree (Base Model section, step 2) is a real
   folder/checkbox tree (via [`streamlit-tree-select`](https://pypi.org/project/streamlit-tree-select/)):
   tables are folders, columns are leaves, and a table's checkbox shows a
