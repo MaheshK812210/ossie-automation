@@ -1630,11 +1630,17 @@ with st.sidebar:
     with _header_cols[1]:
         st.toggle("\U0001f319", key="dark_mode", help="Toggle dark/light theme")
 
-    st.text_input("Model name", value="account_position_model", key="model_name_input")
+    # Defaults live in session_state only — do not also pass value= (Streamlit
+    # warns / can wedge widgets when both are set, e.g. after Power BI import).
+    st.session_state.setdefault("model_name_input", "account_position_model")
+    st.session_state.setdefault(
+        "model_description_input",
+        "Investment account and position semantic model covering client, "
+        "account, security, and calendar dimensions with a daily position fact.",
+    )
+    st.text_input("Model name", key="model_name_input")
     st.text_area(
         "Model description",
-        value="Investment account and position semantic model covering client, "
-        "account, security, and calendar dimensions with a daily position fact.",
         height=90,
         key="model_description_input",
     )
