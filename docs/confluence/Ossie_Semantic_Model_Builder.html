@@ -1,0 +1,235 @@
+<!DOCTYPE html><html><head><meta charset='utf-8'>
+<title>Ossie Semantic Model Builder — Design & Capabilities</title>
+<style>
+body{font-family:Segoe UI,Calibri,Arial,sans-serif;max-width:960px;margin:24px auto;padding:0 16px;color:#1e1b2e;line-height:1.45}
+h1,h2,h3{color:#3d2e7a} img{max-width:100%;border:1px solid #ddd;border-radius:6px;margin:8px 0}
+table{border-collapse:collapse;width:100%;margin:12px 0} th,td{border:1px solid #ccc;padding:8px;text-align:left}
+th{background:#f3e8ff} code,pre{background:#f6f3ff;padding:2px 6px;border-radius:4px}
+pre{padding:12px;overflow:auto} .cap{font-style:italic;color:#555;font-size:0.9em;margin-top:-4px}
+blockquote{border-left:4px solid #6c5ce7;margin:12px 0;padding:8px 12px;background:#faf8ff}
+</style></head><body>
+<h1>Ossie Semantic Model Builder — Design, Capabilities &amp; Usage Guide</h1>
+<p><strong>Audience:</strong> Data platform, analytics engineering, BI, and AI/text-to-SQL stakeholders  </p>
+<p><strong>Product:</strong> Apache Ossie (Open Semantic Interchange) Semantic Model Builder  </p>
+<p><strong>Primary UI:</strong> Streamlit web app  </p>
+<p><strong>Spec:</strong> <a href="https://github.com/apache/ossie/tree/main/core-spec">Apache Ossie core-spec</a> (<code>0.2.0.dev0</code>)</p>
+<blockquote><strong>How to publish this page to Confluence</strong>  </blockquote>
+<blockquote>1. Create a blank Confluence page.  </blockquote>
+<blockquote>2. Attach all files from <code>docs/images/</code> (or drag them into the page).  </blockquote>
+<blockquote>3. Paste this Markdown into Confluence using the <strong>Markdown</strong> macro, <strong>or</strong> import the Word file <code>docs/Ossie_Semantic_Model_Builder_Design_and_Capabilities.docx</code>.  </blockquote>
+<blockquote>4. After paste/import, re-link images if needed (Confluence may rename attachments).  </blockquote>
+<blockquote>See also: <code>docs/HOW_TO_PUBLISH_TO_CONFLUENCE.md</code>.</blockquote>
+<hr>
+<h2>1. Executive summary</h2>
+<p>The <strong>Ossie Semantic Model Builder</strong> turns catalog-exported spreadsheets into a validated <strong>Apache Ossie</strong> semantic model YAML, then optionally:</p>
+<ul>
+<li>Enriches it with AI context and approved SQL (SPOKE)</li>
+<li>Derives an <strong>ontology</strong> layer from FACT/DIM tables</li>
+<li>Converts <strong>bidirectionally</strong> to/from <strong>Power BI</strong> using the official Apache <strong><code>ossie_microsoft</code></strong> converter (TMSL <code>model.bim</code> / <code>.pbip</code>)</li>
+</ul>
+<p><strong>Business benefit:</strong> one governed semantic definition that can feed BI (Power BI / Fabric) and AI/text-to-SQL consumers without hand-building models twice.</p>
+<p><img src="../images/01_home_overview.png" alt="Home overview"></p>
+<p class="cap">Figure 1 — Application home: sidebar sections, Base Model upload area, Ossie YAML panel.</p>
+<hr>
+<h2>2. Problem &amp; benefits</h2>
+<h3>Pain points addressed</h3>
+<table>
+<tr><th>Pain</th><th>Without this tool</th><th>With this tool</th></tr>
+<tr><td>Semantic models live only in Power BI</td><td>Hard to reuse for AI / SQL agents</td><td>Ossie YAML is the portable source of truth</td></tr>
+<tr><td>Catalog → BI is manual</td><td>Weeks of Tabular modeling</td><td>CSV → validated Ossie → TMSL in minutes</td></tr>
+<tr><td>Metrics drift across tools</td><td>Different DAX vs SQL definitions</td><td>Metrics captured once; converter translates where safe</td></tr>
+<tr><td>Public-repo import blocked</td><td>Cannot pull Apache packages live</td><td>Converter <strong>vendored</strong> under <code>vendor/apache-ossie-microsoft</code></td></tr>
+<tr><td>Round-trip from Fabric/PBI</td><td>Rebuild Ossie by hand</td><td>Upload <code>model.bim</code> → Ossie panel</td></tr>
+</table>
+<h3>Key benefits</h3>
+<ol>
+<li><strong>Single semantic layer</strong> — datasets, fields, relationships, metrics, AI context in one YAML.  </li>
+<li><strong>Official Microsoft path</strong> — uses Apache <code>ossie_microsoft</code> for Ossie ↔ Power BI (not a one-off hack).  </li>
+<li><strong>Org-friendly packaging</strong> — no need to import the public <code>apache/ossie</code> repo; source is committed locally.  </li>
+<li><strong>Snowflake-aware export</strong> — optional post-process to <code>Snowflake.Databases(...)</code> M partitions.  </li>
+<li><strong>Validation</strong> — JSON Schema validation against bundled Ossie schemas.  </li>
+<li><strong>Demoable end-to-end</strong> — sample Account/Position model with one click.</li>
+</ol>
+<hr>
+<h2>3. Architecture &amp; design</h2>
+<p><img src="../images/10_architecture.png" alt="Architecture"></p>
+<p class="cap">Figure 2 — High-level architecture: catalog inputs → Streamlit builder → Ossie YAML → Ontology / Power BI / Fabric paths.</p>
+<h3>Design principles</h3>
+<ol>
+<li><strong>Ossie-first</strong> — the app’s native document is <code>{&quot;semantic_model&quot;:[...]}</code>; BI formats are exports/imports.  </li>
+<li><strong>Additive enrichment</strong> — Enrich / SPOKE append context; they do not wipe the base model.  </li>
+<li><strong>Official converter for interchange</strong> — <code>ossie_microsoft</code> owns SQL→DAX safety rules and POWER_BI stash round-trip.  </li>
+<li><strong>Legacy path retained</strong> — in-repo <code>powerbi_export.py</code> + <code>fabric_deploy.py</code> for TMDL + Fabric REST when needed.  </li>
+<li><strong>No secrets in exports</strong> — Snowflake account/warehouse only; Power BI prompts for credentials on refresh.</li>
+</ol>
+<h3>Major components</h3>
+<table>
+<tr><th>Component</th><th>Role</th></tr>
+<tr><td><code>app.py</code></td><td>Streamlit UI (sections, YAML panel, registry)</td></tr>
+<tr><td><code>ossie_builder.py</code></td><td>CSV/XLSX → Ossie model, merge, validate</td></tr>
+<tr><td><code>ontology_builder.py</code></td><td>Semantic model → Ossie ontology + mappings</td></tr>
+<tr><td><code>llm_gateway.py</code></td><td>SPOKE: SQL → instruction JSON via LLM gateway</td></tr>
+<tr><td><code>ossie_microsoft_bridge.py</code></td><td>Unwrap/wrap app models; call official converter; PBIP zip; Snowflake M</td></tr>
+<tr><td><code>vendor/apache-ossie-microsoft/</code></td><td>Official Apache converter (Apache-2.0)</td></tr>
+<tr><td><code>powerbi_export.py</code></td><td>Legacy TMSL/TMDL export + metric preview</td></tr>
+<tr><td><code>fabric_deploy.py</code></td><td>Legacy Fabric REST deploy (TMDL)</td></tr>
+<tr><td><code>git_registry.py</code></td><td>Optional GitHub Contents API save/load</td></tr>
+</table>
+<h3>Document shapes (important)</h3>
+<ul>
+<li><strong>This app</strong> stores: <code>{&quot;semantic_model&quot;: [ { name, datasets, relationships, metrics, ... } ]}</code>  </li>
+<li><strong><code>ossie_microsoft</code></strong> expects a <strong>flat</strong> Ossie document: <code>{ version, name, datasets, ... }</code>  </li>
+<li>The bridge <strong>unwraps</strong> on export and <strong>wraps</strong> on import so the UI stays consistent.</li>
+</ul>
+<hr>
+<h2>4. Capabilities by section</h2>
+<h3>4.1 Base Model</h3>
+<p>Upload catalog extracts → generate validated Ossie YAML.</p>
+<ol>
+<li>Table &amp; column metadata (<strong>required</strong>)  </li>
+<li>Metrics, synonyms &amp; custom extensions (optional)  </li>
+<li>Relationships (optional)</li>
+</ol>
+<p><img src="../images/02_sample_loaded.png" alt="Sample loaded"></p>
+<p class="cap">Figure 3 — Sample Account/Position metadata loaded; tree selection of tables/columns.</p>
+<p><img src="../images/03_base_model_generated.png" alt="Base YAML generated"></p>
+<p class="cap">Figure 4 — After **Generate base YAML**: live Ossie panel with datasets, fields, relationships, metrics.</p>
+<p><strong>Capabilities</strong></p>
+<ul>
+<li>Infers dataset <code>source</code> from qualified <code>Name</code> (e.g. <code>WEALTH_DB.PUBLIC.FACT_POSITION</code>)  </li>
+<li>Maps technical types → Ossie datatypes  </li>
+<li>Supports <strong>Source Column Name</strong> vs logical <strong>Column Title</strong> for Power BI <code>sourceColumn</code>  </li>
+<li>On-demand <strong>Validate YAML</strong> against <code>schema/ossie-schema.json</code>  </li>
+<li>Editable YAML + <strong>Apply edits</strong></li>
+</ul>
+<h3>4.2 Enrich Base Model</h3>
+<p>Layer AI/business context without overwriting the base.</p>
+<p><img src="../images/09_enrich.png" alt="Enrich"></p>
+<p class="cap">Figure 5 — Enrich Base Model: upload AI context CSV to append instructions, synonyms, examples.</p>
+<h3>4.3 SPOKE</h3>
+<p>Attach approved <code>.sql</code> → LLM Gateway → model-level <code>custom_extensions</code> (<code>vendor_name: SPOKE</code>).</p>
+<p><img src="../images/05_spoke.png" alt="SPOKE"></p>
+<p class="cap">Figure 6 — SPOKE section: SQL attachment and enrichment into the semantic model for downstream AI.</p>
+<h3>4.4 Ontology</h3>
+<p>Derive conceptual <strong>EntityType / ValueType</strong> ontology + mappings from FACT/DIM semantic model.</p>
+<p><img src="../images/04_ontology.png" alt="Ontology"></p>
+<p class="cap">Figure 7 — Ontology section: conceptual layer alongside (not replacing) the semantic YAML.</p>
+<h3>4.5 BI Conversions (Ossie ↔ Power BI)</h3>
+<p>Bidirectional conversion via official <strong><code>ossie_microsoft</code></strong>.</p>
+<p><img src="../images/06_bi_conversions.png" alt="BI Conversions"></p>
+<p class="cap">Figure 8 — BI Conversions entry: Ossie → Power BI, Power BI → Ossie, Tableau (placeholder).</p>
+<h4>Ossie → Power BI</h4>
+<ul>
+<li>Calls <code>convert_ossie_to_semantic_model</code>  </li>
+<li>Downloads <strong><code>model.bim</code> (TMSL)</strong> and <strong><code>.pbip.zip</code></strong>  </li>
+<li>Optional Snowflake partition rewrite  </li>
+<li>Shows converter warnings (by design: skip ambiguous SQL rather than emit wrong DAX)  </li>
+<li>Legacy exporter (TMDL / Fabric / synthetic metrics) remains in an expander</li>
+</ul>
+<p><img src="../images/07_ossie_to_powerbi.png" alt="Ossie to Power BI"></p>
+<p class="cap">Figure 9 — Successful Ossie → Power BI: tables / measures / relationships + downloads.</p>
+<h4>Power BI → Ossie</h4>
+<ul>
+<li>Upload Fabric / Desktop <strong><code>model.bim</code></strong>  </li>
+<li>Calls <code>convert_semantic_model_to_ossie</code>  </li>
+<li>Loads wrapped model into the Ossie panel  </li>
+<li>Power BI–only constructs preserved in <code>custom_extensions</code> (<code>POWER_BI</code>) when possible</li>
+</ul>
+<p><img src="../images/08_powerbi_to_ossie.png" alt="Power BI to Ossie"></p>
+<p class="cap">Figure 10 — Power BI → Ossie import success and YAML reload.</p>
+<h3>4.6 Fabric deployment (current state)</h3>
+<table>
+<tr><th>Path</th><th>Format</th><th>Fabric REST in UI?</th></tr>
+<tr><td>Official <code>ossie_microsoft</code></td><td>TMSL (<code>model.bim</code>)</td><td>Not wired in UI yet (engine exists in vendor package)</td></tr>
+<tr><td>Legacy expander</td><td>TMDL via <code>fabric_deploy.py</code></td><td>Yes — workspace ID + bearer token</td></tr>
+</table>
+<p><strong>Note:</strong> Fabric accepts <strong>both TMSL and TMDL</strong>. TMDL is preferred for git-oriented projects; TMSL remains the interchange/API format used by the official converter.</p>
+<h3>4.7 AI Agent Invocation</h3>
+<p>Placeholder for future NL Q&amp;A against the current Ossie model.</p>
+<hr>
+<h2>5. TMSL vs TMDL (for stakeholders)</h2>
+<table>
+<tr><th></th><th><strong>TMSL</strong></th><th><strong>TMDL</strong></th></tr>
+<tr><td>What</td><td>JSON (<code>model.bim</code>)</td><td>Folder of <code>.tmdl</code> text files</td></tr>
+<tr><td>Age</td><td>Established Tabular scripting format</td><td>Newer project/source format</td></tr>
+<tr><td>Best for</td><td>Converters, APIs, Tabular Editor, round-trip</td><td>Fabric/Power BI Project git workflows</td></tr>
+<tr><td>This app’s official path</td><td><strong>Yes (primary)</strong></td><td>Legacy / Fabric deploy path</td></tr>
+</table>
+<p><strong>Why this tool uses TMSL for Ossie ↔ Power BI:</strong> the official Apache <code>ossie_microsoft</code> converter’s public API is TMSL in / TMSL out. That is the correct interchange choice; TMDL remains available for Fabric-oriented legacy packaging.</p>
+<hr>
+<h2>6. End-to-end usage (happy path)</h2>
+<ol>
+<li>Start app: <code>pip install -r requirements.txt &amp;&amp; streamlit run app.py</code> → <code>http://localhost:47531</code>  </li>
+<li>Sidebar → <strong>Load sample data</strong> (or upload your catalog CSVs)  </li>
+<li><strong>Generate base YAML</strong> → review Ossie panel → <strong>Validate YAML</strong>  </li>
+<li>Optional: Enrich / SPOKE / Ontology  </li>
+<li><strong>BI Conversions</strong> → <strong>Convert Ossie → Power BI</strong> → download <code>model.bim</code> or <code>.pbip.zip</code>  </li>
+<li>Open in Power BI Desktop (*File → Open → Power BI Project*) or Tabular Editor  </li>
+<li>Optional reverse: upload <code>model.bim</code> → <strong>Convert Power BI → Ossie</strong></li>
+</ol>
+<h3>Snowflake refresh path</h3>
+<ol>
+<li>Check <strong>Use Snowflake as the data source</strong>  </li>
+<li>Enter Account URL + Warehouse (+ optional Role)  </li>
+<li>Convert — partitions become <code>Snowflake.Databases(...)</code> M  </li>
+<li>Credentials are <strong>not</strong> stored; Power BI prompts on first refresh</li>
+</ol>
+<hr>
+<h2>7. Inputs &amp; outputs</h2>
+<h3>Inputs (sample templates under <code>sample_data/</code>)</h3>
+<table>
+<tr><th>File</th><th>Purpose</th></tr>
+<tr><td><code>01_table_column_metadata.csv</code></td><td>Tables/columns (required)</td></tr>
+<tr><td><code>02_metrics_synonyms_extensions.csv</code></td><td>Metrics, synonyms, extensions</td></tr>
+<tr><td><code>03_relationships.csv</code></td><td>FK relationships</td></tr>
+<tr><td><code>04_ai_context.csv</code></td><td>Enrichment</td></tr>
+<tr><td><code>05_spoke_*.sql</code></td><td>SPOKE SQL</td></tr>
+<tr><td><code>06_*_ontology.yaml</code></td><td>Sample ontology</td></tr>
+</table>
+<h3>Outputs</h3>
+<table>
+<tr><th>Artifact</th><th>Producer</th></tr>
+<tr><td>Ossie semantic YAML</td><td>Base / Enrich / SPOKE / import</td></tr>
+<tr><td>Ontology YAML</td><td>Ontology section</td></tr>
+<tr><td><code>model.bim</code> (TMSL)</td><td>Official converter</td></tr>
+<tr><td><code>.pbip.zip</code></td><td>Bridge packaging</td></tr>
+<tr><td>TMDL + Fabric deploy</td><td>Legacy path</td></tr>
+</table>
+<hr>
+<h2>8. Security &amp; governance notes</h2>
+<ul>
+<li>Uploaded files stay in-session memory (Streamlit process); not uploaded to third parties by default.  </li>
+<li>LLM Gateway / Git registry tokens via <code>.env</code> (see <code>.env.example</code>) — never baked into exports.  </li>
+<li>Converter warnings should be reviewed before production deploy (unsupported extensions, ambiguous metrics).  </li>
+<li>Vendored Apache software retains <code>LICENSE</code> / <code>NOTICE</code> under <code>vendor/apache-ossie-microsoft/</code>.</li>
+</ul>
+<hr>
+<h2>9. Limitations (honest)</h2>
+<ul>
+<li>Tableau export is not implemented.  </li>
+<li>Official UI path does not yet expose Fabric REST deploy (legacy expander does).  </li>
+<li>Composite keys reduce to Tabular single-column relationships where needed.  </li>
+<li>SQL→DAX only when unambiguous; complex SQL may appear as warnings rather than measures.  </li>
+<li>Blank <code>.pbip</code> report scaffold is best-effort; <code>model.bim</code> alone remains usable via Tabular Editor.</li>
+</ul>
+<hr>
+<h2>10. Runbook</h2>
+<pre><code>git checkout cursor/ossie-yaml-streamlit-app-7d77
+pip install -r requirements.txt
+streamlit run app.py
+# opens http://localhost:47531 (see .streamlit/config.toml)
+pytest   # optional</code></pre>
+<p>Editable install of the official converter is included via:</p>
+<pre><code>-e ./vendor/apache-ossie-microsoft</code></pre>
+<p>in <code>requirements.txt</code>.</p>
+<hr>
+<h2>11. Related links</h2>
+<ul>
+<li>Apache Ossie core spec: https://github.com/apache/ossie/tree/main/core-spec  </li>
+<li>Official Microsoft converter: https://github.com/apache/ossie/tree/main/converters/microsoft  </li>
+<li>Fabric semantic model REST API: https://learn.microsoft.com/en-us/rest/api/fabric/semanticmodel/items/create-semantic-model  </li>
+<li>Project README: repository root <code>README.md</code></li>
+</ul>
+<hr>
+<p>*Document version: 1.0 — generated for Confluence / stakeholder review.*</p>
+</body></html>

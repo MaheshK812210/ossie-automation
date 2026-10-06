@@ -9,6 +9,16 @@ and can then export that model straight into a **Power BI semantic model**
 Spec reference: [apache/ossie/core-spec](https://github.com/apache/ossie/tree/main/core-spec)
 (Ossie core metadata specification, version `0.2.0.dev0`).
 
+## Design & stakeholder documentation
+
+A Confluence-ready design / capabilities guide (with screenshots) lives under
+[`docs/`](docs/):
+
+- `docs/Ossie_Semantic_Model_Builder_Design_and_Capabilities.md` — Markdown source  
+- `docs/Ossie_Semantic_Model_Builder_Design_and_Capabilities.docx` — Word import for Confluence  
+- `docs/HOW_TO_PUBLISH_TO_CONFLUENCE.md` — publish steps  
+- `docs/images/` — UI snapshots + architecture diagram  
+
 ## Quick start
 
 ```bash
